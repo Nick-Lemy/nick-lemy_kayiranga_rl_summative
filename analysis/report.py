@@ -231,29 +231,29 @@ CSS = """
 * { box-sizing: border-box; }
 body {
   font-family: "Charter", "Georgia", "Times New Roman", serif;
-  font-size: 9.6pt; line-height: 1.46; color: #16181d; margin: 0;
-  max-width: 190mm; margin-inline: auto; padding: 10mm 6mm;
+  font-size: 9.1pt; line-height: 1.38; color: #16181d; margin: 0;
+  max-width: 190mm; margin-inline: auto; padding: 6mm 6mm;
 }
-h1 { font-size: 19pt; margin: 0 0 2mm; line-height: 1.15; letter-spacing: -.2pt; }
+h1 { font-size: 17.5pt; margin: 0 0 1.6mm; line-height: 1.15; letter-spacing: -.2pt; }
 h2 {
-  font-size: 12.5pt; margin: 7mm 0 2.5mm; padding-bottom: 1.2mm;
+  font-size: 11.8pt; margin: 5mm 0 2mm; padding-bottom: 1mm;
   border-bottom: 1.6px solid #16181d; letter-spacing: -.1pt;
 }
-h3 { font-size: 10.4pt; margin: 4.5mm 0 1.5mm; }
-p { margin: 0 0 2.4mm; text-align: justify; hyphens: auto; }
+h3 { font-size: 10pt; margin: 3.2mm 0 1.2mm; }
+p { margin: 0 0 1.9mm; text-align: justify; hyphens: auto; }
 .byline { color: #55595f; font-size: 9pt; margin-bottom: 5mm; }
-.lead { font-size: 10.2pt; }
+.lead { font-size: 9.6pt; }
 
 table.sweep {
-  width: 100%; border-collapse: collapse; font-size: 7.3pt;
-  margin: 2.5mm 0 2mm; font-family: "SF Mono", "Menlo", monospace;
+  width: 100%; border-collapse: collapse; font-size: 6.9pt;
+  margin: 1.8mm 0 1.4mm; font-family: "SF Mono", "Menlo", monospace;
   font-variant-numeric: tabular-nums;
 }
 table.sweep th {
-  text-align: right; padding: 1.3mm 1.1mm; border-bottom: 1.2px solid #16181d;
+  text-align: right; padding: 1mm .9mm; border-bottom: 1.2px solid #16181d;
   font-weight: 600; white-space: nowrap;
 }
-table.sweep td { text-align: right; padding: 1.15mm 1.1mm; border-bottom: .4px solid #dcdde0; }
+table.sweep td { text-align: right; padding: .88mm .9mm; border-bottom: .4px solid #dcdde0; }
 table.sweep th:first-child, table.sweep td:first-child { text-align: left; }
 table.sweep th.res, table.sweep td.res { background: #f4f5f7; }
 table.sweep tr.best td { font-weight: 700; background: #eaf3ff; }
@@ -261,20 +261,24 @@ table.sweep tr.best td.res { background: #dcebff; }
 td.agent { font-weight: 600; }
 .sub { color: #6a6e75; font-size: 6.6pt; }
 
-figure { margin: 3mm 0 4mm; page-break-inside: avoid; }
-figure img { width: 100%; display: block; border: .5px solid #e2e3e6; }
-figcaption { font-size: 7.7pt; color: #4a4e55; margin-top: 1.3mm; line-height: 1.4; }
+figure { margin: 2.2mm 0 2.8mm; page-break-inside: avoid; }
+figure img {
+  width: 100%; max-height: 74mm; object-fit: contain;
+  display: block; border: .5px solid #e2e3e6;
+}
+figure.tall img { max-height: 104mm; }
+figcaption { font-size: 7.4pt; color: #4a4e55; margin-top: 1mm; line-height: 1.34; }
 figcaption b { color: #16181d; }
 
-.caption { font-size: 7.7pt; color: #4a4e55; margin: -1mm 0 3mm; }
+.caption { font-size: 7.4pt; color: #4a4e55; margin: -.6mm 0 2.2mm; }
 .missing { color: #b4442f; font-style: italic; font-size: 8.4pt; }
 code { font-family: "SF Mono", Menlo, monospace; font-size: 8.4pt; background: #f2f3f5; padding: .3mm 1mm; }
 
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 6mm; }
 .three { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0 5mm; }
 .box {
-  border-left: 2.4px solid #16181d; padding: 1.5mm 0 1.5mm 3mm;
-  margin: 2.5mm 0; font-size: 9pt; background: #fafafb;
+  border-left: 2.4px solid #16181d; padding: 1.2mm 0 1.2mm 3mm;
+  margin: 2mm 0; font-size: 8.6pt; background: #fafafb;
 }
 ul { margin: 0 0 2.4mm; padding-left: 4.5mm; }
 li { margin-bottom: .9mm; }
@@ -305,7 +309,7 @@ def build() -> Path:
 
 <h2>1. Environment</h2>
 {T.ENV_INTRO}
-{figure("env_overview.png", T.CAP_ENV)}
+{figure("env_overview.png", T.CAP_ENV, cls="tall")}
 
 <h3>1.1 Agent, action space and observation space</h3>
 {T.ENV_SPACES}
@@ -318,7 +322,7 @@ def build() -> Path:
 
 <div class="box">{T.BASELINE_BOX}</div>
 
-<h2 class="pagebreak">2. Implementation</h2>
+<h2>2. Implementation</h2>
 {T.IMPLEMENTATION}
 
 <h2>3. Hyperparameter experiments</h2>
@@ -329,7 +333,7 @@ def build() -> Path:
 <p class="caption">{T.CAP_DQN}</p>
 {T.DQN_ANALYSIS}
 
-<h3 class="pagebreak">3.2 PPO</h3>
+<h3>3.2 PPO</h3>
 {sweep_table("PPO")}
 <p class="caption">{T.CAP_PPO}</p>
 {T.PPO_ANALYSIS}
@@ -350,7 +354,7 @@ def build() -> Path:
 {figure("fig02_algorithm_comparison.png", T.CAP_FIG2)}
 {T.DISCUSSION_REWARD}
 
-<h3 class="pagebreak">4.2 Training objectives and exploration</h3>
+<h3>4.2 Training objectives and exploration</h3>
 {figure("fig03_dqn_objective.png", T.CAP_FIG3)}
 {figure("fig04_pg_entropy.png", T.CAP_FIG4)}
 {T.DISCUSSION_OBJECTIVE}
@@ -359,7 +363,7 @@ def build() -> Path:
 {figure("fig05_convergence.png", T.CAP_FIG5)}
 {T.DISCUSSION_CONVERGENCE}
 
-<h3 class="pagebreak">4.4 Generalisation</h3>
+<h3>4.4 Generalisation</h3>
 {generalization_table()}
 <p class="caption">{T.CAP_GEN_TABLE}</p>
 {figure("fig06_generalization.png", T.CAP_FIG6)}
