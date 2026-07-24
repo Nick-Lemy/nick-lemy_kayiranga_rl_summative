@@ -42,3 +42,11 @@ assets/*.mp4
 # Sweep eval histories and results tables ARE committed: they are the evidence
 # behind the report's hyperparameter tables. Only raw replay buffers are not.
 *.pkl
+
+# Per-configuration sweep checkpoints are reproducible from the training
+# scripts and would add ~25 MB. The `*_final` policies ARE committed, so a
+# fresh clone can run `uv run main.py` without training anything first.
+models/**/*_[A-Z][0-9][0-9].zip
+models/**/*_[A-Z][0-9][0-9].pt
+models/**/*_smoke.*
+models/**/*_probe.*
