@@ -1,0 +1,30 @@
+{
+  "row": {
+    "run_id": "P02",
+    "algo": "PPO",
+    "learning_rate": 0.001,
+    "n_steps": 512,
+    "batch_size": 256,
+    "n_epochs": 10,
+    "gamma": 0.995,
+    "gae_lambda": 0.95,
+    "clip_range": 0.2,
+    "ent_coef": 0.01,
+    "vf_coef": 0.5,
+    "max_grad_norm": 0.5,
+    "timesteps": 300000,
+    "mean_return": 41.19,
+    "std_return": 61.8,
+    "success_rate": 0.1333,
+    "mean_miss": 7.57,
+    "flight_time": 10.8,
+    "battery_left": 0.701,
+    "convergence_step": 195000,
+    "wall_time_s": 217.1
+  },
+  "outcomes": {
+    "crash": 2,
+    "delivered": 4,
+    "missed_zone": 24
+  }
+}

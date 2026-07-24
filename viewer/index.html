@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blood Delivery UAV — episode replay</title>
+
+<!--
+  Browser replay of an episode exported by the RL environment.
+
+  This is the "serialise it and hand it to a frontend" half of the project. The
+  Python side writes a self-contained JSON trace (terrain heightfield, drop-zone
+  geometry, corridor limits, and one record per control step with the aircraft
+  and payload poses, the action taken, the reward, and the consumables). Nothing
+  here knows anything about MuJoCo: the page rebuilds the scene from the JSON
+  alone, which is exactly what a web or mobile operations dashboard would do
+  against a `GET /episodes/:id` endpoint.
+
+  Loading a trace, in order of preference:
+    1. ?src=<url>            fetches that URL
+    2. viewer/episode.json   fetched automatically when served over http
+    3. the file picker       works from file:// where fetch is blocked
+-->
+
+<!-- three.js is vendored next to this file (MIT) rather than pulled from a CDN,
+     so the viewer works offline and cannot break when a CDN version moves. -->
+<script type="importmap">
+{ "imports": { "three": "./three.module.js" } }
+</script>
+
+<style>
+  :root {
+    --surface-0: #0d1117;
+    --surface-1: rgba(18, 24, 34, 0.86);
+    --border:    rgba(255, 255, 255, 0.10);
+    --text-1:    #f2f4f8;
+    --text-2:    #aab3c0;
+    --text-3:    #6f7885;
+    --accent:    #58a6ff;
+    --good:      #2ecc71;
+    --warn:      #f0b429;
+    --bad:       #ff6b6b;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    background: var(--surface-0);
+    color: var(--text-1);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  #scene { position: fixed; inset: 0; }
+
+  .panel {
+    position: fixed;
+    background: var(--surface-1);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+  }
+
+  /* ---------- telemetry ---------- */
+  #hud { top: 16px; left: 16px; width: 268px; }
+  #hud h1 {
+    margin: 0 0 2px; font-size: 13px; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--accent);
+  }
+  #hud .sub { font-size: 11px; color: var(--text-3); margin-bottom: 12px; }
+
+  .row { display: flex; justify-content: space-between; font-size: 12px; margin: 5px 0; }
+  .row .k { color: var(--text-2); }
+  .row .v { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  .meter { margin: 9px 0 11px; }
+  .meter .lbl {
+    display: flex; justify-content: space-between;
+    font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--text-3); margin-bottom: 4px;
+  }
+  .track { height: 6px; border-radius: 3px; background: rgba(255,255,255,.10); overflow: hidden; }
+  .fill  { height: 100%; border-radius: 3px; transition: width .1s linear, background .3s; }
+
+  #action {
+    margin-top: 12px; padding: 8px 10px; border-radius: 8px;
+    background: rgba(88,166,255,.12); border: 1px solid rgba(88,166,255,.28);
+    font-family: var(--mono); font-size: 12px; text-align: center; letter-spacing: .04em;
+  }
+  #outcome {
+    margin-top: 8px; padding: 8px 10px; border-radius: 8px; display: none;
+    font-size: 12px; text-align: center; font-weight: 600; letter-spacing: .03em;
+  }
+
+  /* ---------- transport ---------- */
+  #controls {
+    bottom: 16px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 18px; width: min(680px, calc(100vw - 32px));
+  }
+  button {
+    background: rgba(255,255,255,.07); color: var(--text-1);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 14px; font-size: 12px; font-family: var(--sans);
+    cursor: pointer; white-space: nowrap; transition: background .15s;
+  }
+  button:hover { background: rgba(255,255,255,.14); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #06121f; font-weight: 600; }
+  input[type=range] { flex: 1; accent-color: var(--accent); min-width: 90px; }
+  #tstamp { font-family: var(--mono); font-size: 12px; color: var(--text-2); min-width: 84px; text-align: right; }
+  label.speed { font-size: 11px; color: var(--text-3); display: flex; align-items: center; gap: 5px; }
+  select {
+    background: rgba(255,255,255,.07); color: var(--text-1);
+    border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-size: 11px;
+  }
+
+  /* ---------- reward strip ---------- */
+  #chart { top: 16px; right: 16px; width: 300px; }
+  #chart .cap {
+    font-size: 10px; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--text-3); margin-bottom: 8px;
+  }
+  #spark { width: 100%; height: 68px; display: block; }
+
+  /* ---------- loader ---------- */
+  #loader {
+    position: fixed; inset: 0; display: grid; place-items: center;
+    background: var(--surface-0); z-index: 20; text-align: center; padding: 24px;
+  }
+  #loader .box { max-width: 460px; }
+  #loader h2 { font-size: 17px; margin: 0 0 10px; }
+  #loader p { color: var(--text-2); font-size: 13px; line-height: 1.6; margin: 0 0 18px; }
+  #loader code {
+    font-family: var(--mono); font-size: 12px; color: var(--accent);
+    background: rgba(88,166,255,.10); padding: 2px 6px; border-radius: 4px;
+  }
+  .hint { position: fixed; bottom: 16px; left: 16px; font-size: 11px; color: var(--text-3); }
+
+  @media (max-width: 900px) {
+    #chart { display: none; }
+    #hud { width: 210px; padding: 11px 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="scene"></div>
+
+<div class="panel" id="hud">
+  <h1>Blood Delivery UAV</h1>
+  <div class="sub" id="agent">—</div>
+
+  <div class="row"><span class="k">mission time</span><span class="v" id="v-time">0.0 s</span></div>
+  <div class="row"><span class="k">altitude AGL</span><span class="v" id="v-alt">0.0 m</span></div>
+  <div class="row"><span class="k">range to zone</span><span class="v" id="v-range">0.0 m</span></div>
+  <div class="row"><span class="k">wind</span><span class="v" id="v-wind">0.0 m/s</span></div>
+  <div class="row"><span class="k">return</span><span class="v" id="v-return">0.00</span></div>
+
+  <div class="meter">
+    <div class="lbl"><span>Battery</span><span id="v-bat">100%</span></div>
+    <div class="track"><div class="fill" id="f-bat" style="width:100%;background:var(--good)"></div></div>
+  </div>
+  <div class="meter">
+    <div class="lbl"><span>Cold chain</span><span id="v-cold">100%</span></div>
+    <div class="track"><div class="fill" id="f-cold" style="width:100%;background:var(--good)"></div></div>
+  </div>
+
+  <div id="action">HOVER</div>
+  <div id="outcome"></div>
+</div>
+
+<div class="panel" id="chart">
+  <div class="cap">Step reward</div>
+  <canvas id="spark" width="600" height="136"></canvas>
+</div>
+
+<div class="panel" id="controls">
+  <button class="primary" id="btn-play">Pause</button>
+  <button id="btn-restart">Restart</button>
+  <input type="range" id="scrub" min="0" max="100" value="0">
+  <span id="tstamp">0.0 / 0.0 s</span>
+  <label class="speed">
+    <select id="speed">
+      <option value="0.25">0.25x</option>
+      <option value="0.5">0.5x</option>
+      <option value="1" selected>1x</option>
+      <option value="2">2x</option>
+    </select>
+  </label>
+  <button id="btn-cam">Camera</button>
+</div>
+
+<div class="hint">drag to orbit &middot; scroll to zoom &middot; <span id="camname">chase</span> camera</div>
+
+<div id="loader">
+  <div class="box">
+    <h2>Load an episode</h2>
+    <p>
+      Export one from the project root with<br>
+      <code>uv run main.py export-trace</code><br><br>
+      That writes <code>viewer/episode.json</code>, which this page loads
+      automatically when served over HTTP. Opening the file directly from disk
+      blocks <code>fetch</code>, so pick the file manually instead.
+    </p>
+    <input type="file" id="file" accept="application/json">
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ------------------------------------------------------------------ helpers */
+const $ = (id) => document.getElementById(id);
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp01 = (x) => Math.max(0, Math.min(1, x));
+
+/* --------------------------------------------------------------- renderer */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+$('scene').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x8fb8d8);
+scene.fog = new THREE.Fog(0x8fb8d8, 60, 190);
+
+const camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.1, 600);
+
+scene.add(new THREE.HemisphereLight(0xbcd8f0, 0x3d5233, 1.05));
+const sun = new THREE.DirectionalLight(0xffeedd, 1.5);
+sun.position.set(-40, 60, 30);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -70, right: 70, top: 70, bottom: -70, near: 1, far: 220 });
+scene.add(sun);
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+/* ---------------------------------------------------- minimal orbit control
+   Three's OrbitControls lives in the examples bundle; this page only needs
+   orbit + zoom, so it carries its own 30-line version and stays dependency-free. */
+const orbit = { theta: -0.55, phi: 1.16, dist: 26, drag: false, px: 0, py: 0 };
+const dom = renderer.domElement;
+dom.addEventListener('pointerdown', (e) => { orbit.drag = true; orbit.px = e.clientX; orbit.py = e.clientY; });
+addEventListener('pointerup', () => { orbit.drag = false; });
+addEventListener('pointermove', (e) => {
+  if (!orbit.drag) return;
+  orbit.theta -= (e.clientX - orbit.px) * 0.006;
+  orbit.phi = Math.max(0.12, Math.min(1.52, orbit.phi - (e.clientY - orbit.py) * 0.006));
+  orbit.px = e.clientX; orbit.py = e.clientY;
+});
+dom.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  orbit.dist = Math.max(6, Math.min(150, orbit.dist * (1 + Math.sign(e.deltaY) * 0.10)));
+}, { passive: false });
+
+/* ------------------------------------------------------------------- state */
+let trace = null, frames = [], root = new THREE.Group();
+let drone = null, payload = null, chute = null, trail = null;
+let idx = 0, playing = true, speed = 1, camMode = 'chase', cumulative = [];
+let clock = new THREE.Clock();
+
+/* MuJoCo is z-up, three.js is y-up: swap once, here, and never think about it again. */
+const P = (p) => new THREE.Vector3(p[0], p[2], -p[1]);
+const Q = (q) => new THREE.Quaternion(q[1], q[3], -q[2], q[0]);
+
+/* ------------------------------------------------------------ scene builder */
+function buildTerrain(t) {
+  const geo = new THREE.PlaneGeometry(t.size_x * 2, t.size_y * 2, t.cols - 1, t.rows - 1);
+  geo.rotateX(-Math.PI / 2);
+  const pos = geo.attributes.position;
+  for (let r = 0; r < t.rows; r++) {
+    for (let c = 0; c < t.cols; c++) {
+      // the plane's vertex grid runs -y..+y after the rotation, hence rows reversed
+      const v = r * t.cols + c;
+      pos.setY(v, t.heights[(t.rows - 1 - r) * t.cols + c] * t.elevation);
+    }
+  }
+  geo.computeVertexNormals();
+
+  // tint by altitude so the relief reads without a texture
+  const colors = [];
+  const low = new THREE.Color(0x4a7c3f), high = new THREE.Color(0x86a86b);
+  for (let i = 0; i < pos.count; i++) {
+    const h = clamp01(pos.getY(i) / (t.elevation * 0.75));
+    colors.push(...low.clone().lerp(high, h).toArray());
+  }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: 0.97, metalness: 0.0, flatShading: false,
+  }));
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+function buildDrone() {
+  const g = new THREE.Group();
+  const white = new THREE.MeshStandardMaterial({ color: 0xf2f4f8, roughness: 0.42, metalness: 0.12 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x22262e, roughness: 0.55 });
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.09, 0.18), white);
+  body.castShadow = true; g.add(body);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.085, 16, 12), white);
+  nose.scale.set(1.1, 0.55, 0.9); nose.position.x = 0.19; g.add(nose);
+
+  const arm = new THREE.CylinderGeometry(0.014, 0.014, 0.56, 8);
+  for (const s of [1, -1]) {
+    const a = new THREE.Mesh(arm, dark);
+    a.rotation.set(0, 0, Math.PI / 2);
+    a.rotation.y = s * Math.PI / 4;
+    g.add(a);
+  }
+  const rotors = [];
+  for (const [x, z] of [[0.2, 0.2], [-0.2, 0.2], [-0.2, -0.2], [0.2, -0.2]]) {
+    const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.05, 10), dark);
+    pod.position.set(x, 0.03, z); g.add(pod);
+    const disc = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.105, 0.105, 0.006, 20),
+      new THREE.MeshStandardMaterial({ color: 0x2a2f38, transparent: true, opacity: 0.45 })
+    );
+    disc.position.set(x, 0.062, z); g.add(disc); rotors.push(disc);
+  }
+  g.userData.rotors = rotors;
+  return g;
+}
+
+function buildPayload() {
+  const g = new THREE.Group();
+  const box = new THREE.Mesh(
+    new THREE.BoxGeometry(0.15, 0.11, 0.11),
+    new THREE.MeshStandardMaterial({ color: 0xeef2f7, roughness: 0.7 })
+  );
+  box.castShadow = true; g.add(box);
+  const red = new THREE.MeshStandardMaterial({ color: 0xc2181f, roughness: 0.6 });
+  const v = new THREE.Mesh(new THREE.BoxGeometry(0.155, 0.062, 0.026), red); g.add(v);
+  const h = new THREE.Mesh(new THREE.BoxGeometry(0.155, 0.026, 0.062), red); g.add(h);
+  return g;
+}
+
+function buildChute() {
+  const canopy = new THREE.Mesh(
+    new THREE.SphereGeometry(0.42, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+    new THREE.MeshStandardMaterial({ color: 0xff8a3d, roughness: 0.85, side: THREE.DoubleSide })
+  );
+  canopy.position.y = 0.55;
+  const g = new THREE.Group(); g.add(canopy); g.visible = false;
+  return g;
+}
+
+function buildScene(t) {
+  scene.remove(root);
+  root = new THREE.Group();
+  scene.add(root);
+
+  root.add(buildTerrain(t.terrain));
+
+  const target = P(t.drop_target);
+
+  // drop zone: ring on the ground + a soft column so it is visible from the air
+  const ring = new THREE.Mesh(
+    new THREE.CylinderGeometry(t.zone_radius, t.zone_radius, 0.05, 48),
+    new THREE.MeshStandardMaterial({ color: 0x18c26a, emissive: 0x0d5c33, roughness: 0.6 })
+  );
+  ring.position.copy(target).setY(target.y + 0.03);
+  root.add(ring);
+
+  const column = new THREE.Mesh(
+    new THREE.CylinderGeometry(t.zone_radius, t.zone_radius, 9, 40, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0x2ee07d, transparent: true, opacity: 0.13, side: THREE.DoubleSide })
+  );
+  column.position.copy(target).setY(target.y + 4.5);
+  root.add(column);
+
+  // clinic beside the zone, depot beside the launch pad
+  const wall = new THREE.MeshStandardMaterial({ color: 0xe8e6df, roughness: 0.9 });
+  const roof = new THREE.MeshStandardMaterial({ color: 0x8c3d2e, roughness: 0.85 });
+  const building = (x, z, w, d, h, y) => {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wall);
+    b.position.set(x, y + h / 2, z); b.castShadow = true; b.receiveShadow = true; root.add(b);
+    const r = new THREE.Mesh(new THREE.BoxGeometry(w * 1.08, 0.5, d * 1.08), roof);
+    r.position.set(x, y + h + 0.25, z); r.castShadow = true; root.add(r);
+  };
+  building(target.x - 7.5, target.z - 4.5, 6, 9, 4.8, target.y);
+  building(t.launch[0] - 6, -11, 8, 12, 6, 0);   // beside the pad, not behind it
+
+  const pad = new THREE.Mesh(
+    new THREE.CylinderGeometry(3, 3, 0.5, 40),
+    new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.8 })
+  );
+  pad.position.set(t.launch[0], 0.25, 0); pad.receiveShadow = true; root.add(pad);
+
+  // corridor walls, drawn as translucent planes at the lateral limits
+  const cw = t.corridor.half_width;
+  const wallMat = new THREE.MeshBasicMaterial({
+    color: 0xffa23d, transparent: true, opacity: 0.07, side: THREE.DoubleSide,
+  });
+  for (const s of [1, -1]) {
+    const p = new THREE.Mesh(new THREE.PlaneGeometry(80, 22), wallMat);
+    p.position.set(0, 11, -s * cw);
+    root.add(p);
+  }
+
+  drone = buildDrone(); root.add(drone);
+  payload = buildPayload(); root.add(payload);
+  chute = buildChute(); root.add(chute);
+
+  // flight path, revealed progressively as the replay advances
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(frames.length * 3), 3));
+  trail = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0x58a6ff, transparent: true, opacity: 0.75 }));
+  trail.frustumCulled = false;
+  root.add(trail);
+}
+
+/* ------------------------------------------------------------------- replay */
+function applyFrame(i, alpha = 0) {
+  const f = frames[i];
+  const g = frames[Math.min(i + 1, frames.length - 1)];
+
+  const dp = P(f.drone.p).lerp(P(g.drone.p), alpha);
+  drone.position.copy(dp);
+  drone.quaternion.copy(Q(f.drone.q).slerp(Q(g.drone.q), alpha));
+
+  payload.position.copy(P(f.payload.p).lerp(P(g.payload.p), alpha));
+  payload.quaternion.copy(Q(f.payload.q).slerp(Q(g.payload.q), alpha));
+
+  // the canopy only exists after release, and only while still falling
+  const falling = !f.att && payload.position.y > (P(trace.drop_target).y + 0.2);
+  chute.visible = falling;
+  if (falling) chute.position.copy(payload.position);
+
+  for (const r of drone.userData.rotors) r.rotation.y += 1.1;
+
+  // trail
+  const pos = trail.geometry.attributes.position;
+  for (let k = 0; k <= i; k++) {
+    const p = P(frames[k].drone.p);
+    pos.setXYZ(k, p.x, p.y, p.z);
+  }
+  trail.geometry.setDrawRange(0, i + 1);
+  pos.needsUpdate = true;
+
+  updateHud(i, dp);
+}
+
+function updateHud(i, dp) {
+  const f = frames[i];
+  const target = P(trace.drop_target);
+  const range = Math.hypot(dp.x - target.x, dp.z - target.z);
+
+  $('v-time').textContent = f.t.toFixed(1) + ' s';
+  $('v-alt').textContent = dp.y.toFixed(1) + ' m';
+  $('v-range').textContent = range.toFixed(1) + ' m';
+  $('v-wind').textContent = Math.hypot(f.wind[0], f.wind[1]).toFixed(1) + ' m/s';
+  $('v-return').textContent = cumulative[i].toFixed(2);
+  $('action').textContent = trace.actions[f.a] ?? ('action ' + f.a);
+
+  for (const [key, val] of [['bat', f.bat], ['cold', f.cold]]) {
+    const pct = clamp01(val) * 100;
+    $('v-' + key).textContent = Math.round(pct) + '%';
+    const fill = $('f-' + key);
+    fill.style.width = pct + '%';
+    fill.style.background = pct > 50 ? 'var(--good)' : pct > 20 ? 'var(--warn)' : 'var(--bad)';
+  }
+
+  $('scrub').value = String((i / (frames.length - 1)) * 100);
+  $('tstamp').textContent = `${f.t.toFixed(1)} / ${frames[frames.length - 1].t.toFixed(1)} s`;
+
+  const banner = $('outcome');
+  if (i >= frames.length - 1) {
+    const s = trace.summary || {};
+    const good = s.outcome === 'delivered';
+    banner.style.display = 'block';
+    banner.style.background = good ? 'rgba(46,204,113,.16)' : 'rgba(255,107,107,.16)';
+    banner.style.color = good ? 'var(--good)' : 'var(--bad)';
+    banner.textContent = (s.outcome || 'finished').replace(/_/g, ' ').toUpperCase()
+      + (good && s.miss_distance != null ? ` · miss ${s.miss_distance.toFixed(2)} m` : '');
+  } else {
+    banner.style.display = 'none';
+  }
+  drawSpark(i);
+}
+
+/* ---------------------------------------------------------------- sparkline */
+const spark = $('spark'), sctx = spark.getContext('2d');
+function drawSpark(upto) {
+  const w = spark.width, h = spark.height;
+  sctx.clearRect(0, 0, w, h);
+  const r = frames.map((f) => f.r);
+  const lo = Math.min(...r), hi = Math.max(...r);
+  const span = (hi - lo) || 1;
+  const y0 = h - ((0 - lo) / span) * h;
+
+  sctx.strokeStyle = 'rgba(255,255,255,.16)';
+  sctx.lineWidth = 1;
+  sctx.beginPath(); sctx.moveTo(0, y0); sctx.lineTo(w, y0); sctx.stroke();
+
+  sctx.strokeStyle = '#58a6ff';
+  sctx.lineWidth = 2;
+  sctx.lineJoin = 'round';
+  sctx.beginPath();
+  for (let i = 0; i <= upto; i++) {
+    const x = (i / (frames.length - 1)) * w;
+    const y = h - ((r[i] - lo) / span) * h;
+    i ? sctx.lineTo(x, y) : sctx.moveTo(x, y);
+  }
+  sctx.stroke();
+}
+
+/* ------------------------------------------------------------------ camera */
+function placeCamera(dp) {
+  if (camMode === 'orbit') {
+    const t = new THREE.Vector3(0, 4, 0);
+    camera.position.set(
+      t.x + orbit.dist * Math.sin(orbit.phi) * Math.cos(orbit.theta),
+      t.y + orbit.dist * Math.cos(orbit.phi),
+      t.z + orbit.dist * Math.sin(orbit.phi) * Math.sin(orbit.theta)
+    );
+    camera.lookAt(t);
+    return;
+  }
+  if (camMode === 'mission') {
+    const mid = P(trace.drop_target).clone().add(new THREE.Vector3(trace.launch[0], 0, 0)).multiplyScalar(0.5);
+    camera.position.set(mid.x, 46, mid.z + 58);
+    camera.lookAt(mid.x, 0, mid.z);
+    return;
+  }
+  // chase: sit behind the aircraft along its heading, with a little damping
+  const fwd = new THREE.Vector3(1, 0, 0).applyQuaternion(drone.quaternion);
+  fwd.y = 0; fwd.normalize();
+  const want = dp.clone().addScaledVector(fwd, -orbit.dist * 0.28).add(new THREE.Vector3(0, orbit.dist * 0.12, 0));
+  camera.position.lerp(want, 0.12);
+  camera.lookAt(dp);
+}
+
+/* -------------------------------------------------------------------- loop */
+let acc = 0;
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.1);
+  if (!frames.length) { renderer.render(scene, camera); return; }
+
+  if (playing && idx < frames.length - 1) {
+    acc += dt * speed;
+    while (acc >= trace.dt && idx < frames.length - 1) { acc -= trace.dt; idx++; }
+  }
+  const alpha = playing ? clamp01(acc / trace.dt) : 0;
+  applyFrame(idx, idx < frames.length - 1 ? alpha : 0);
+
+  if (idx >= frames.length - 1 && playing) { playing = false; $('btn-play').textContent = 'Replay'; }
+  placeCamera(drone.position);
+  renderer.render(scene, camera);
+}
+
+/* ------------------------------------------------------------------- input */
+$('btn-play').onclick = () => {
+  if (idx >= frames.length - 1) { idx = 0; acc = 0; }
+  playing = !playing;
+  $('btn-play').textContent = playing ? 'Pause' : 'Play';
+};
+$('btn-restart').onclick = () => { idx = 0; acc = 0; playing = true; $('btn-play').textContent = 'Pause'; };
+$('scrub').oninput = (e) => {
+  idx = Math.round((e.target.value / 100) * (frames.length - 1));
+  acc = 0; applyFrame(idx);
+};
+$('speed').onchange = (e) => { speed = parseFloat(e.target.value); };
+$('btn-cam').onclick = () => {
+  camMode = { chase: 'orbit', orbit: 'mission', mission: 'chase' }[camMode];
+  $('camname').textContent = camMode;
+};
+addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { e.preventDefault(); $('btn-play').click(); }
+  if (e.code === 'KeyC') $('btn-cam').click();
+  if (e.code === 'KeyR') $('btn-restart').click();
+});
+
+/* -------------------------------------------------------------------- load */
+function start(data) {
+  trace = data;
+  frames = data.frames;
+  if (!frames || !frames.length) { alert('That file has no frames.'); return; }
+
+  cumulative = [];
+  let run = 0;
+  for (const f of frames) { run += f.r; cumulative.push(run); }
+
+  buildScene(data);
+  idx = 0; acc = 0; playing = true;
+  $('agent').textContent =
+    (data.summary?.agent ?? 'episode') + ' · ' + frames.length + ' steps · ' + (1 / data.dt).toFixed(0) + ' Hz';
+  $('loader').style.display = 'none';
+  applyFrame(0);
+}
+
+$('file').onchange = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const fr = new FileReader();
+  fr.onload = () => { try { start(JSON.parse(fr.result)); } catch (err) { alert('Could not parse: ' + err.message); } };
+  fr.readAsText(file);
+};
+
+const src = new URLSearchParams(location.search).get('src') || 'episode.json';
+fetch(src)
+  .then((r) => (r.ok ? r.json() : Promise.reject(new Error(r.status))))
+  .then(start)
+  .catch(() => { /* no trace reachable - the file picker stays up */ });
+
+animate();
+</script>
+</body>
+</html>

@@ -1,0 +1,44 @@
+# --- Assignment working context (local only) ---
+CONTEXT.md
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+
+# --- uv ---
+# NOTE: uv.lock is intentionally COMMITTED (assignment requires it)
+
+# --- RL artifacts ---
+logs/tensorboard/
+*.monitor.csv
+wandb/
+
+# --- Media / scratch ---
+*.mp4.tmp
+.scratch/
+
+# --- OS / editors ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# --- large generated media -------------------------------------------------
+# Figures and the JSON trace are committed (the report and the viewer need
+# them); rendered MP4s are not - they are reproducible with
+#   uv run main.py video
+assets/*.mp4
+
+# --- training scratch ------------------------------------------------------
+# Sweep eval histories and results tables ARE committed: they are the evidence
+# behind the report's hyperparameter tables. Only raw replay buffers are not.
+*.pkl
