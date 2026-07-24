@@ -35,7 +35,7 @@ No other setup is needed — no manual venv, no `pip install`.
 
 | Command | What it does |
 |---|---|
-| `uv run main.py` | Live 3D simulation with the best trained agent |
+| `uv run main.py` | Live 3D simulation with the best trained agent, in real time |
 | `uv run main.py env-info` | Print the full action / observation / reward specification |
 | `uv run main.py play --algo ppo --render` | Verbose rollout: 3D viewer **and** step-by-step terminal telemetry |
 | `uv run main.py evaluate` | Score every agent, including the generalisation tests |
@@ -47,6 +47,10 @@ No other setup is needed — no manual venv, no `pip install`.
 | `uv run pytest -q` | Environment contract tests |
 
 `uv run python play.py --algo dqn --render` works directly too.
+
+The viewer plays back at **real time** by default: one second of simulated flight
+takes one second of wall clock, so a delivery runs about 15-20 s. `--speed 0.5`
+gives slow motion and `--speed 3` skips ahead, on both `demo` and `play`.
 
 ---
 
