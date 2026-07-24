@@ -101,7 +101,13 @@ def cmd_demo(args) -> None:
         print("      uv run main.py train --algo ppo --final")
         print("  Flying the hand-written reference pilot instead.\n")
 
-    env = ZiplineDeliveryEnv(render_mode="human", record_trace=args.trace)
+    env = ZiplineDeliveryEnv(
+        render_mode="human",
+        record_trace=args.trace,
+        playback_speed=args.speed,
+    )
+    print(f"  playing back at {args.speed}x real time"
+          f"{'' if args.speed == 1.0 else '  (use --speed 1 for real time)'}\n")
     info: dict = {}
     try:
         for episode in range(args.episodes):
@@ -245,6 +251,8 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--verbose", action="store_true", default=True)
     d.add_argument("--quiet", dest="verbose", action="store_false")
     d.add_argument("--trace", action="store_true", help="also write a JSON trace")
+    d.add_argument("--speed", type=float, default=1.0,
+                   help="playback rate, 1.0 = real time (try 0.5 for slow motion)")
     d.set_defaults(func=cmd_demo)
 
     i = sub.add_parser("env-info", help="print the environment specification")
@@ -255,6 +263,8 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--episodes", type=int, default=5)
     pl.add_argument("--seed", type=int, default=None)
     pl.add_argument("--render", action="store_true", help="open the 3D viewer as well")
+    pl.add_argument("--speed", type=float, default=1.0,
+                   help="playback rate when rendering, 1.0 = real time")
     pl.set_defaults(func=cmd_play)
 
     t = sub.add_parser("train", help="run a hyperparameter sweep")

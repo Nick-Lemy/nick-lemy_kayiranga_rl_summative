@@ -225,11 +225,19 @@ class ZiplineDeliveryEnv(gym.Env):
         render_mode: str | None = None,
         config: EnvConfig | None = None,
         record_trace: bool = False,
+        realtime: bool = True,
+        playback_speed: float = 1.0,
     ) -> None:
         super().__init__()
         self.cfg = config or EnvConfig()
         self.render_mode = render_mode
         self.record_trace = record_trace
+        # Only affects render_mode="human": the viewer sleeps so simulated time
+        # tracks wall-clock time. Without it the flight replays at roughly a
+        # hundred times real speed. Training never renders, so this costs
+        # nothing there.
+        self.realtime = realtime
+        self.playback_speed = playback_speed
 
         self.model = mujoco.MjModel.from_xml_path(str(SCENE_PATH))
         self.data = mujoco.MjData(self.model)
@@ -846,7 +854,9 @@ class ZiplineDeliveryEnv(gym.Env):
 
         if self.render_mode == "human":
             if self._viewer is None:
-                self._viewer = rendering.PassiveViewer(self)
+                self._viewer = rendering.PassiveViewer(
+                    self, realtime=self.realtime, speed=self.playback_speed
+                )
             self._viewer.sync()
             return None
         if self.render_mode == "rgb_array":

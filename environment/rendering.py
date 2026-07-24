@@ -19,6 +19,7 @@ that are no longer the ones the physics is using.
 from __future__ import annotations
 
 import math
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -75,18 +76,36 @@ def _chase_camera(env: "ZiplineDeliveryEnv", cam: mujoco.MjvCamera, mode: str = 
 
 
 class PassiveViewer:
-    """Thin wrapper over ``mujoco.viewer.launch_passive``."""
+    """Thin wrapper over ``mujoco.viewer.launch_passive``.
 
-    def __init__(self, env: "ZiplineDeliveryEnv", camera: str = "chase") -> None:
+    ``launch_passive`` does not pace anything - it just draws whatever is in
+    ``MjData`` when you call ``sync``. Driving the loop from python therefore
+    replays the flight as fast as the CPU can integrate it, which here is on the
+    order of a hundred times real time and looks like the aircraft teleporting.
+    This wrapper sleeps the difference so one second of simulated flight takes
+    one second of wall clock, at ``speed`` times normal.
+    """
+
+    def __init__(
+        self,
+        env: "ZiplineDeliveryEnv",
+        camera: str = "chase",
+        realtime: bool = True,
+        speed: float = 1.0,
+    ) -> None:
         import mujoco.viewer as mjv
 
         self.env = env
         self.camera = camera
+        self.realtime = realtime
+        self.speed = max(0.05, float(speed))
         self._handle = mjv.launch_passive(
             env.model, env.data, show_left_ui=False, show_right_ui=False
         )
         self._handle.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
         self._upload_terrain()
+        self._wall_ref = time.perf_counter()
+        self._sim_ref = float(env.data.time)
 
     def _upload_terrain(self) -> None:
         try:
@@ -94,6 +113,24 @@ class PassiveViewer:
         except Exception:  # pragma: no cover - viewer already gone
             pass
         self.env.terrain_dirty = False
+
+    def _pace(self) -> None:
+        """Hold the frame until wall clock catches up with simulated time."""
+        sim_t = float(self.env.data.time)
+        # mj_resetData rewinds the clock, so re-baseline on every episode
+        if sim_t < self._sim_ref:
+            self._wall_ref = time.perf_counter()
+            self._sim_ref = sim_t
+            return
+        target = self._wall_ref + (sim_t - self._sim_ref) / self.speed
+        lag = target - time.perf_counter()
+        if lag > 0:
+            time.sleep(lag)
+        elif lag < -0.5:
+            # we fell badly behind (a slow frame, or the window was dragged);
+            # resync rather than sprinting to catch up
+            self._wall_ref = time.perf_counter()
+            self._sim_ref = sim_t
 
     def sync(self) -> None:
         if not self._handle.is_running():
@@ -103,6 +140,8 @@ class PassiveViewer:
         if self.camera != "free":
             _chase_camera(self.env, self._handle.cam, self.camera)
         self._handle.sync()
+        if self.realtime:
+            self._pace()
 
     @property
     def running(self) -> bool:

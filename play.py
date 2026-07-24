@@ -57,7 +57,11 @@ def run(args) -> None:
         print(f"{_YELLOW}  No trained model on disk - flying the reference pilot.{_RESET}")
         print("  Train one with:  uv run main.py train --algo ppo --final\n")
 
-    env = ZiplineDeliveryEnv(render_mode="human" if getattr(args, "render", False) else None)
+    render = getattr(args, "render", False)
+    env = ZiplineDeliveryEnv(
+        render_mode="human" if render else None,
+        playback_speed=getattr(args, "speed", 1.0),
+    )
     returns, outcomes, misses = [], [], []
 
     try:
@@ -137,6 +141,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--episodes", type=int, default=5)
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--render", action="store_true", help="open the interactive 3D viewer")
+    p.add_argument("--speed", type=float, default=1.0,
+                   help="playback rate when rendering, 1.0 = real time")
     return p
 
 
