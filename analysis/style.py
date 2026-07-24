@@ -131,6 +131,56 @@ def label_line(ax, x, y, text: str, color: str, dx: float = 0.0, **kw) -> None:
     )
 
 
+def label_ends(ax, entries, min_gap_frac: float = 0.055) -> None:
+    """Direct-label several series at their end points without overlapping.
+
+    Series that finish at similar values would otherwise print on top of each
+    other - two labels colliding into an unreadable smear is worse than no
+    direct labels at all. Entries are ``(x, y, text, colour)``; the y positions
+    are nudged apart just enough to clear each other, and a short leader keeps
+    each label tied to its line.
+    """
+    if not entries:
+        return
+    lo, hi = ax.get_ylim()
+    min_gap = (hi - lo) * min_gap_frac
+
+    ordered = sorted(entries, key=lambda e: e[1])
+    placed = [list(e) for e in ordered]
+    # single upward pass, then clamp back inside the axes
+    for i in range(1, len(placed)):
+        if placed[i][1] - placed[i - 1][1] < min_gap:
+            placed[i][1] = placed[i - 1][1] + min_gap
+    overflow = placed[-1][1] - (hi - min_gap * 0.4)
+    if overflow > 0:
+        for row in placed:
+            row[1] -= overflow
+
+    for (x, y_lab, text, colour), (_, y_true, _, _) in zip(placed, ordered):
+        if abs(y_lab - y_true) > min_gap * 0.25:
+            ax.plot(
+                [x, x + (ax.get_xlim()[1] - ax.get_xlim()[0]) * 0.018],
+                [y_true, y_lab],
+                color=colour,
+                linewidth=0.8,
+                alpha=0.55,
+                zorder=3,
+                clip_on=False,
+            )
+        ax.annotate(
+            text,
+            xy=(x, y_lab),
+            xytext=(8, 0),
+            textcoords="offset points",
+            color=colour,
+            fontsize=8.5,
+            fontweight="bold",
+            va="center",
+            ha="left",
+            clip_on=False,
+        )
+
+
 def save(fig, name: str) -> Path:
     FIG_DIR.mkdir(parents=True, exist_ok=True)
     path = FIG_DIR / name

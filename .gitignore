@@ -53,3 +53,4 @@ models/**/*_probe.*
 
 # built report (regenerate with: uv run python -m analysis.report)
 report/report.html
+report/report.pdf

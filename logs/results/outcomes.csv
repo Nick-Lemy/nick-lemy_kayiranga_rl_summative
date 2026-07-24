@@ -1,0 +1,6 @@
+agent,corridor_breach,crash,loss_of_control,missed_zone,delivered,cold_chain_expired
+A2C,0.32,0.32,0.28,0.08,,
+DQN,,,,0.92,0.08,
+PPO,,,,,1.0,
+REINFORCE,0.8,,0.2,,,
+PILOT,0.16,,,0.4,0.4,0.04

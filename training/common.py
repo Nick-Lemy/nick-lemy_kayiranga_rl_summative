@@ -480,28 +480,61 @@ def model_path(algo: str, run_id: str = "final") -> Path:
     return MODEL_DIR / ALGO_FAMILY[algo.lower()] / f"{algo.lower()}_{run_id}"
 
 
+def best_sweep_run(algo: str) -> str | None:
+    """The highest-scoring sweep configuration for an algorithm."""
+    rows = [r for r in read_results(algo) if r.get("run_id") != "final"]
+    if not rows:
+        return None
+    return max(rows, key=lambda r: float(r.get("mean_return", "-inf")))["run_id"]
+
+
+def resolve_run_id(algo: str) -> str | None:
+    """Pick the highest-scoring policy actually on disk.
+
+    Ranked by held-out score rather than by "prefer the longer run": a longer
+    budget is not automatically a better policy, and A2C's extended run in fact
+    scored well below its best sweep configuration. Every sweep configuration is
+    saved, so an algorithm whose extended run was never performed still has ten
+    trained policies to choose from and stays in the comparison.
+    """
+    scored: list[tuple[float, str]] = []
+    for row in read_results(algo):
+        run_id = row.get("run_id")
+        if not run_id:
+            continue
+        base = model_path(algo, run_id)
+        if not any(base.with_suffix(sfx).exists() for sfx in (".zip", ".pt")):
+            continue
+        try:
+            scored.append((float(row.get("mean_return", "-inf")), run_id))
+        except ValueError:
+            continue
+    return max(scored)[1] if scored else None
+
+
 def available_agents() -> dict[str, Path]:
     """Which trained policies are actually on disk."""
     found = {}
     for algo in ALGO_FAMILY:
-        for run_id in ("final", "best"):
-            base = model_path(algo, run_id)
-            for suffix in (".zip", ".pt"):
-                if base.with_suffix(suffix).exists():
-                    found[algo] = base.with_suffix(suffix)
-                    break
-            if algo in found:
+        run_id = resolve_run_id(algo)
+        if run_id is None:
+            continue
+        base = model_path(algo, run_id)
+        for suffix in (".zip", ".pt"):
+            if base.with_suffix(suffix).exists():
+                found[algo] = base.with_suffix(suffix)
                 break
     return found
 
 
-def load_agent(algo: str, run_id: str = "final", env=None):
+def load_agent(algo: str, run_id: str | None = None, env=None):
     """Load a trained policy and return ``(predict_fn, label)``.
 
     ``predict_fn`` maps an observation to a greedy action, which is the same
     interface the scripted pilot and the evaluation helpers use.
     """
     algo = algo.lower()
+    run_id = run_id or resolve_run_id(algo) or "final"
     base = model_path(algo, run_id)
     if algo == "reinforce":
         from training.reinforce import REINFORCE
@@ -535,7 +568,8 @@ def best_available_agent():
 
     scored = []
     for algo in agents:
-        rows = [r for r in read_results(algo) if r.get("run_id") == "final"]
+        run_id = resolve_run_id(algo)
+        rows = [r for r in read_results(algo) if r.get("run_id") == run_id]
         if not rows:
             rows = read_results(algo)
         score = max((float(r.get("mean_return", "-inf")) for r in rows), default=float("-inf"))

@@ -1,0 +1,26 @@
+{
+  "row": {
+    "run_id": "R07",
+    "algo": "REINFORCE",
+    "learning_rate": 0.0003,
+    "gamma": 0.995,
+    "episodes_per_update": 48,
+    "use_baseline": true,
+    "normalize_returns": true,
+    "ent_coef": 0.01,
+    "max_grad_norm": 0.5,
+    "timesteps": 300000,
+    "mean_return": -41.23,
+    "std_return": 11.87,
+    "success_rate": 0.0,
+    "mean_miss": NaN,
+    "flight_time": 8.23,
+    "battery_left": 0.732,
+    "convergence_step": 15000,
+    "wall_time_s": 116.0
+  },
+  "outcomes": {
+    "corridor_breach": 25,
+    "loss_of_control": 5
+  }
+}

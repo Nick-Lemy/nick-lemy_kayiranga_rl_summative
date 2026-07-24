@@ -1,0 +1,30 @@
+{
+  "row": {
+    "run_id": "A08",
+    "algo": "A2C",
+    "learning_rate": 0.0007,
+    "n_steps": 16,
+    "gamma": 0.995,
+    "gae_lambda": 1.0,
+    "ent_coef": 0.05,
+    "vf_coef": 0.5,
+    "max_grad_norm": 0.5,
+    "use_rms_prop": true,
+    "normalize_advantage": false,
+    "timesteps": 300000,
+    "mean_return": -61.29,
+    "std_return": 16.68,
+    "success_rate": 0.0,
+    "mean_miss": 36.099,
+    "flight_time": 4.85,
+    "battery_left": 0.825,
+    "convergence_step": 180000,
+    "wall_time_s": 133.1
+  },
+  "outcomes": {
+    "corridor_breach": 9,
+    "crash": 10,
+    "loss_of_control": 8,
+    "missed_zone": 3
+  }
+}

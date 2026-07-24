@@ -1,0 +1,26 @@
+agent,algo,condition,mean_return,std_return,success_rate,mean_miss,flight_time,battery_left
+A2C (A08),A2C,nominal,-61.91,16.54,0.0,44.807,4.92,0.826
+A2C (A08),A2C,unseen_seeds,-55.63,14.87,0.0,32.804,5.38,0.794
+A2C (A08),A2C,harsh_weather,-65.15,37.12,0.0,34.221,5.72,0.787
+A2C (A08),A2C,tight_battery,-61.49,37.42,0.0,31.433,5.62,0.698
+A2C (A08),A2C,long_range,-48.27,73.92,0.04,30.896,6.09,0.777
+DQN (D04),DQN,nominal,46.95,45.42,0.08,5.8,9.9,0.719
+DQN (D04),DQN,unseen_seeds,63.63,69.3,0.16,5.28,9.66,0.706
+DQN (D04),DQN,harsh_weather,28.52,34.21,0.04,9.654,10.66,0.682
+DQN (D04),DQN,tight_battery,64.41,72.05,0.16,5.366,9.52,0.561
+DQN (D04),DQN,long_range,69.06,73.88,0.2,5.065,9.96,0.695
+PPO (final),PPO,nominal,235.37,17.07,1.0,0.885,10.56,0.709
+PPO (final),PPO,unseen_seeds,224.35,42.2,0.96,1.037,10.14,0.699
+PPO (final),PPO,harsh_weather,193.06,67.25,0.88,1.569,11.05,0.675
+PPO (final),PPO,tight_battery,220.05,53.41,0.96,0.967,9.98,0.552
+PPO (final),PPO,long_range,229.15,53.66,0.96,0.872,10.98,0.676
+REINFORCE (R07),REINFORCE,nominal,-42.91,12.28,0.0,nan,8.23,0.736
+REINFORCE (R07),REINFORCE,unseen_seeds,-41.92,9.91,0.0,nan,8.26,0.712
+REINFORCE (R07),REINFORCE,harsh_weather,-44.4,14.78,0.0,nan,9.66,0.681
+REINFORCE (R07),REINFORCE,tight_battery,-41.92,9.91,0.0,nan,8.26,0.567
+REINFORCE (R07),REINFORCE,long_range,-30.76,13.34,0.0,nan,8.52,0.705
+hand-written pilot,PILOT,nominal,90.27,102.87,0.4,2.868,14.33,0.652
+hand-written pilot,PILOT,unseen_seeds,138.87,99.74,0.68,2.332,13.71,0.644
+hand-written pilot,PILOT,harsh_weather,22.73,75.45,0.12,4.366,18.15,0.544
+hand-written pilot,PILOT,tight_battery,138.87,99.74,0.68,2.332,13.71,0.453
+hand-written pilot,PILOT,long_range,130.11,118.12,0.68,2.286,15.17,0.61

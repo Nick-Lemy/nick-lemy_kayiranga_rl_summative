@@ -1,0 +1,32 @@
+{
+  "row": {
+    "run_id": "D07",
+    "algo": "DQN",
+    "learning_rate": 0.0003,
+    "buffer_size": 200000,
+    "learning_starts": 10000,
+    "batch_size": 128,
+    "gamma": 0.995,
+    "train_freq": 4,
+    "gradient_steps": 1,
+    "target_update_interval": 2000,
+    "tau": 1.0,
+    "exploration_fraction": 0.7,
+    "exploration_initial_eps": 1.0,
+    "exploration_final_eps": 0.15,
+    "max_grad_norm": 10.0,
+    "timesteps": 300000,
+    "mean_return": -35.01,
+    "std_return": 10.15,
+    "success_rate": 0.0,
+    "mean_miss": NaN,
+    "flight_time": 14.12,
+    "battery_left": 0.62,
+    "convergence_step": 165000,
+    "wall_time_s": 238.8
+  },
+  "outcomes": {
+    "cold_chain_expired": 6,
+    "corridor_breach": 24
+  }
+}

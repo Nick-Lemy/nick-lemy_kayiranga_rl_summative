@@ -29,6 +29,7 @@ from analysis.style import (
     OUTCOME_ORDER,
     ROOT,
     STATUS,
+    label_ends,
     label_line,
     save,
     thousands,
@@ -174,6 +175,7 @@ def fig_algorithm_comparison() -> None:
     )
 
     drew = False
+    left_labels, right_labels = [], []
     for algo in ALGO_ORDER:
         best = best_run(algo)
         if not best:
@@ -184,9 +186,9 @@ def fig_algorithm_comparison() -> None:
         drew = True
         colour = ALGO_COLOR[algo]
         ax.plot(steps, _smooth(ret), color=colour, linewidth=2.0, zorder=4)
-        label_line(ax, steps[-1], _smooth(ret)[-1], algo, colour)
+        left_labels.append((steps[-1], _smooth(ret)[-1], algo, colour))
         ax2.plot(steps, 100 * _smooth(succ), color=colour, linewidth=2.0, zorder=4)
-        label_line(ax2, steps[-1], 100 * _smooth(succ)[-1], algo, colour)
+        right_labels.append((steps[-1], 100 * _smooth(succ)[-1], algo, colour))
 
     if not drew:
         plt.close(fig)
@@ -203,6 +205,9 @@ def fig_algorithm_comparison() -> None:
             color=MUTED,
             fontsize=7.5,
         )
+
+    label_ends(ax, left_labels)
+    label_ends(ax2, right_labels)
 
     ax.set_title("Mean episode return", loc="left")
     ax.set_xlabel("environment steps")

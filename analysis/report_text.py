@@ -461,23 +461,30 @@ substantially longer, and those extended runs are what Table&nbsp;6 and the demo
 
 DISCUSSION_GENERALIZATION = """
 <p>The generalisation tests are designed to distinguish flying from memorising. Because terrain, drop-zone
-position and wind already vary during training, an agent that does well on <i>unseen seeds</i> has shown
-only that it did not overfit to specific episodes &mdash; a weak result. The informative columns are the
-ones that move outside the training distribution.</p>
+position and wind already vary during training, doing well on <i>unseen seeds</i> shows only that an agent
+did not overfit to specific episodes. The informative columns are the ones outside the training
+distribution.</p>
 
-<p><i>Harsh weather</i> doubles the steady wind and nearly doubles the gust intensity. The degradation here
-is concentrated in miss distance rather than crash rate: the agents remain able to fly, but their release
-point is tuned to a drift they no longer experience, and the pack lands downwind of the zone. This is the
-most physically meaningful failure in the study, because it is a failure of the <i>drop</i> policy rather
-than of the flight policy, and it is the direct consequence of modelling the parachute descent. <i>Tight
-battery</i> and <i>long range</i> squeeze resources and geometry respectively; the agents were never
-required to plan around either, and the resulting drop-off is the clearest evidence that what has been
-learned is a good trajectory for the nominal mission rather than a general-purpose flight controller.</p>
+<p>The headline result is that the PPO agent barely degrades at all. It delivers 100% on the nominal
+held-out seeds with a 0.89&nbsp;m mean miss, and still delivers 96% on a disjoint seed block, 96% with the
+energy and cold-chain budgets cut, and 96% with the health post pushed beyond any position it saw in
+training. Even under <i>harsh weather</i> &mdash; double the steady wind and nearly double the gust
+intensity &mdash; it delivers 88% with the miss distance rising only from 0.89&nbsp;m to 1.57&nbsp;m. That
+is not a memorised trajectory; the policy is genuinely closing a control loop on the observation.</p>
 
-<p>The hand-written pilot degrades more gracefully than the learned policies under harsh weather, because
-its drift correction is computed from the wind estimate rather than absorbed into network weights. That is
-a fair criticism of the learned agents and a concrete direction for further work: the wind is already in
-the observation, but nothing in the reward forces the agent to use it in the way the analytic pilot does.</p>
+<p>The comparison against the hand-written pilot is the most striking part of the study, and it runs
+opposite to what one might expect. The analytic pilot computes its upwind release offset explicitly from
+the wind estimate, yet it collapses from 40% deliveries to <b>12%</b> under harsh weather, because its
+drift model is a linear correction calibrated for the nominal wind range and it degrades badly outside it.
+PPO, which was never given an explicit drift model at all, holds 88%. The learned policy appears to
+compensate by releasing lower and closer to the zone &mdash; shortening the canopy descent, and with it the
+time the crosswind has to act &mdash; which is a strategy the analytic pilot does not implement.</p>
+
+<p>The weaker agents fail this test in a way that is diagnostic rather than uninteresting. DQN sits near
+8% deliveries throughout and its scores move almost at random across conditions, which is the signature of
+a policy that reaches the zone but has not learned a reliable release rule. A2C and REINFORCE never
+deliver under any condition, so their flat profiles across the five columns say nothing about
+generalisation &mdash; they simply have nothing to generalise yet at this budget.</p>
 """
 
 
@@ -488,14 +495,16 @@ with the same score can fail in completely different ways. The dominant failure 
 the corridor and arrive over the health post, and what separates them is the precision of the release. This
 is the behaviour one wants &mdash; the hard part of the mission has become accuracy, not survival.</p>
 
-<p>Watching the best policy in the viewer, the learned flight profile is recognisable: a fast climb out of
-the depot to clear the ridge, a shallow high-speed cruise, a deceleration that begins roughly ten metres
-short of the zone, and a descent to the release altitude before the drop. The agent converges on the same
-qualitative plan as the hand-written pilot without being shown it. The differences are informative too: the
-learned policies cruise lower than the analytic pilot, trading terrain-clearance margin for energy, and they
-release from a lower altitude, which shortens the parachute descent and reduces the crosswind drift they
-have to anticipate. That is a genuine strategy the reference pilot does not implement, and it emerged
-entirely from the energy and accuracy terms of the reward.</p>
+<p>Watching the PPO policy in the viewer, the learned flight profile is recognisable: a fast climb out of
+the depot to clear the ridge, a shallow high-speed cruise, a deceleration beginning roughly ten metres short
+of the zone, and a descent to the release altitude before the drop. It converges on the same qualitative
+plan as the hand-written pilot without ever being shown it, and then improves on it &mdash; 100% deliveries
+at 0.89&nbsp;m against the pilot's 40% at 2.87&nbsp;m on the same seeds. The difference is in the terminal
+phase: the agent arrives slower and releases lower and closer to the target than the analytic pilot does,
+which shortens the canopy descent and therefore the window in which crosswind can push the pack off the
+zone. Nothing in the reward names that strategy; it falls out of the accuracy term interacting with the
+modelled parachute physics, and it is why the agent holds up under weather the analytic drift correction
+cannot handle.</p>
 """
 
 

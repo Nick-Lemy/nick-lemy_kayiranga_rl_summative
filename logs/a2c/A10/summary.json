@@ -1,0 +1,27 @@
+{
+  "row": {
+    "run_id": "A10",
+    "algo": "A2C",
+    "learning_rate": 0.0003,
+    "n_steps": 32,
+    "gamma": 0.995,
+    "gae_lambda": 1.0,
+    "ent_coef": 0.01,
+    "vf_coef": 0.5,
+    "max_grad_norm": 0.5,
+    "use_rms_prop": false,
+    "normalize_advantage": false,
+    "timesteps": 300000,
+    "mean_return": -75.55,
+    "std_return": 6.52,
+    "success_rate": 0.0,
+    "mean_miss": NaN,
+    "flight_time": 7.68,
+    "battery_left": 0.767,
+    "convergence_step": 225000,
+    "wall_time_s": 136.3
+  },
+  "outcomes": {
+    "corridor_breach": 30
+  }
+}
