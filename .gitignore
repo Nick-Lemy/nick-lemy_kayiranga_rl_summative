@@ -50,3 +50,6 @@ models/**/*_[A-Z][0-9][0-9].zip
 models/**/*_[A-Z][0-9][0-9].pt
 models/**/*_smoke.*
 models/**/*_probe.*
+
+# built report (regenerate with: uv run python -m analysis.report)
+report/report.html
