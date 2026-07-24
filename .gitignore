@@ -50,6 +50,8 @@ models/**/*_[A-Z][0-9][0-9].zip
 models/**/*_[A-Z][0-9][0-9].pt
 models/**/*_smoke.*
 models/**/*_probe.*
+# ...except the best sweep checkpoint for algorithms whose extended run was not
+# performed; those are force-added so a clone has a policy for all four.
 
 # built report (regenerate with: uv run python -m analysis.report)
 report/report.html
