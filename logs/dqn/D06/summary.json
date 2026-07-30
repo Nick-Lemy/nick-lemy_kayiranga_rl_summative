@@ -15,21 +15,18 @@
     "exploration_initial_eps": 1.0,
     "exploration_final_eps": 0.02,
     "max_grad_norm": 10.0,
-    "timesteps": 300000,
-    "mean_return": -44.26,
-    "std_return": 19.26,
-    "success_rate": 0.0,
-    "mean_miss": 24.657,
-    "flight_time": 20.63,
-    "battery_left": 0.521,
-    "convergence_step": 210000,
-    "wall_time_s": 252.6
+    "timesteps": 200000,
+    "mean_return": 284.41,
+    "std_return": 122.52,
+    "success_rate": 0.7,
+    "mean_miss": 3.071,
+    "flight_time": 45.72,
+    "battery_left": 0.726,
+    "convergence_step": 110000,
+    "wall_time_s": 476.2
   },
   "outcomes": {
-    "cold_chain_expired": 20,
-    "corridor_breach": 2,
-    "crash": 3,
-    "loss_of_control": 2,
-    "missed_zone": 3
+    "survey_complete": 21,
+    "timeout": 9
   }
 }

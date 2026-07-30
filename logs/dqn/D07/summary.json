@@ -15,18 +15,18 @@
     "exploration_initial_eps": 1.0,
     "exploration_final_eps": 0.15,
     "max_grad_norm": 10.0,
-    "timesteps": 300000,
-    "mean_return": -35.01,
-    "std_return": 10.15,
-    "success_rate": 0.0,
-    "mean_miss": NaN,
-    "flight_time": 14.12,
-    "battery_left": 0.62,
-    "convergence_step": 165000,
-    "wall_time_s": 238.8
+    "timesteps": 200000,
+    "mean_return": 123.04,
+    "std_return": 94.15,
+    "success_rate": 0.1333,
+    "mean_miss": 3.196,
+    "flight_time": 53.69,
+    "battery_left": 0.694,
+    "convergence_step": 190000,
+    "wall_time_s": 473.0
   },
   "outcomes": {
-    "cold_chain_expired": 6,
-    "corridor_breach": 24
+    "survey_complete": 4,
+    "timeout": 26
   }
 }

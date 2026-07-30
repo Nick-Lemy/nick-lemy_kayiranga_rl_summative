@@ -11,17 +11,19 @@
     "max_grad_norm": 0.5,
     "use_rms_prop": false,
     "normalize_advantage": false,
-    "timesteps": 300000,
-    "mean_return": -75.55,
-    "std_return": 6.52,
+    "timesteps": 200000,
+    "mean_return": -535.91,
+    "std_return": 301.76,
     "success_rate": 0.0,
-    "mean_miss": NaN,
-    "flight_time": 7.68,
-    "battery_left": 0.767,
-    "convergence_step": 225000,
-    "wall_time_s": 136.3
+    "mean_miss": 2.744,
+    "flight_time": 45.6,
+    "battery_left": 0.706,
+    "convergence_step": 20000,
+    "wall_time_s": 179.2
   },
   "outcomes": {
-    "corridor_breach": 30
+    "capsized": 2,
+    "lost": 15,
+    "timeout": 13
   }
 }

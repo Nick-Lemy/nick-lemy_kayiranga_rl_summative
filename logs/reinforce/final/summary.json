@@ -1,0 +1,25 @@
+{
+  "row": {
+    "run_id": "final",
+    "algo": "REINFORCE",
+    "learning_rate": 0.0003,
+    "gamma": 0.995,
+    "episodes_per_update": 8,
+    "use_baseline": true,
+    "normalize_returns": true,
+    "ent_coef": 0.01,
+    "max_grad_norm": 0.5,
+    "timesteps": 1500000,
+    "mean_return": -191.18,
+    "std_return": 156.11,
+    "success_rate": 0.0,
+    "mean_miss": 2.564,
+    "flight_time": 55.0,
+    "battery_left": 0.833,
+    "convergence_step": 450000,
+    "wall_time_s": 841.8
+  },
+  "outcomes": {
+    "timeout": 30
+  }
+}

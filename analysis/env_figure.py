@@ -2,9 +2,9 @@
 
     uv run python -m analysis.env_figure
 
-Flies one successful delivery with the reference pilot and grabs four moments
-from it - the whole corridor, the climb-out, the approach, and the payload under
-canopy - so the reader can see what the agent is actually controlling.
+Flies one successful survey with the reference pilot and grabs four moments from
+it - the whole pipeline, a transit between stations, a scan at a hoop, and the
+finished survey - so the reader can see what the agent is actually controlling.
 """
 
 from __future__ import annotations
@@ -13,35 +13,35 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from analysis.style import INK, INK_2, MUTED, save, use_report_style
-from environment.custom_env import ZiplineDeliveryEnv
+from environment.custom_env import SubseaInspectionEnv
 from environment.rendering import OffscreenRenderer
 from tests.scripted_pilot import scripted_policy
 
 W, H = 900, 560
 
 
-def _find_delivering_seed(env: ZiplineDeliveryEnv, seeds=range(120, 200)) -> int | None:
+def _find_survey_seed(env: SubseaInspectionEnv, seeds=range(120, 200)) -> int | None:
     for seed in seeds:
         env.reset(seed=seed)
         done = False
         while not done:
             _, _, term, trunc, info = env.step(scripted_policy(env))
             done = term or trunc
-        if info["outcome"] == "delivered":
+        if info["outcome"] == "survey_complete":
             return seed
     return None
 
 
 def capture(seed: int) -> tuple[list[np.ndarray], list[str]]:
-    """Four frames from one delivery, with captions."""
-    env = ZiplineDeliveryEnv()
+    """Four frames from one completed survey, with captions."""
+    env = SubseaInspectionEnv()
     mission = OffscreenRenderer(env, width=W, height=H, camera="mission", hud=False)
     chase = OffscreenRenderer(env, width=W, height=H, camera="chase", hud=False)
-    drop = OffscreenRenderer(env, width=W, height=H, camera="payload", hud=False)
+    station = OffscreenRenderer(env, width=W, height=H, camera="station", hud=False)
 
     env.reset(seed=seed)
     frames: dict[str, np.ndarray] = {}
-    release_step = None
+    prev_wp = 0
     step = 0
     done = False
     while not done:
@@ -50,40 +50,41 @@ def capture(seed: int) -> tuple[list[np.ndarray], list[str]]:
         step += 1
         if step == 6:
             frames["overview"] = mission.frame()
-        if step == 26:
-            frames["climb"] = chase.frame()
-        if not env.attached and release_step is None:
-            release_step = step
-        if release_step is not None and step == release_step + 3:
-            frames["drop"] = drop.frame()
+        if step == 40:
+            frames["transit"] = chase.frame()
+        # grab a scan the moment a station is logged (active index advances)
+        if info["waypoints_done"] > prev_wp and info["waypoints_done"] == 2:
+            frames["scan"] = station.frame()
+        prev_wp = info["waypoints_done"]
         if done:
             frames["final"] = mission.frame()
 
     env.close()
-    order = ["overview", "climb", "drop", "final"]
+    order = ["overview", "transit", "scan", "final"]
     captions = [
-        "1. The mission. Depot and helipad on the left, hills in between, health post\n"
-        "and the green 3 m drop zone on the right; orange pylons mark the corridor.",
-        "2. Climb-out. The policy commands attitude and climb-rate setpoints, and an\n"
-        "onboard PD loop turns them into four individual rotor thrusts.",
-        "3. Release. The pack detaches with the aircraft's momentum and descends under\n"
-        "a canopy, so any crosswind walks it downwind for the whole fall.",
-        f"4. Delivered. Miss distance {info['miss_distance']:.2f} m, flight time "
-        f"{info['flight_time']:.1f} s, battery\nremaining {100 * info['battery']:.0f}%, "
-        f"cold chain {100 * info['cold_chain']:.0f}% unused.",
+        "1. The survey. Launch buoy on the left, the pipeline snaking across the seabed\n"
+        "in a shallow S, four teal inspection hoops, and the manifold on the right.",
+        "2. Transit. The policy commands surge / sway / yaw / depth setpoints; an onboard\n"
+        "controller turns them into thruster forces and leans into the current.",
+        "3. Inspection. Holding station inside a hoop against the drifting current, the\n"
+        "vehicle fires the INSPECT action to log a scan and unlock the next station.",
+        f"4. Survey complete. Mean scan offset {info['inspect_error']:.2f} m, mission time "
+        f"{info['mission_time']:.1f} s,\nbattery remaining {100 * info['battery']:.0f}%.",
     ]
-    return [frames[k] for k in order if k in frames], captions[: len(frames)]
+    return [frames[k] for k in order if k in frames], [
+        c for k, c in zip(order, captions) if k in frames
+    ]
 
 
 def main() -> None:
     use_report_style()
-    env = ZiplineDeliveryEnv()
-    seed = _find_delivering_seed(env)
+    env = SubseaInspectionEnv()
+    seed = _find_survey_seed(env)
     env.close()
     if seed is None:
-        print("  [fail] the reference pilot did not deliver on any probed seed")
+        print("  [fail] the reference pilot did not complete a survey on any probed seed")
         return
-    print(f"  filming delivery on seed {seed}")
+    print(f"  filming survey on seed {seed}")
 
     images, captions = capture(seed)
     fig, axes = plt.subplots(2, 2, figsize=(10.4, 7.8))
@@ -93,8 +94,6 @@ def main() -> None:
         ax.set_yticks([])
         for s in ax.spines.values():
             s.set_color("#d9d8d3")
-        # captions go under the axes as free text: set_xlabel gets clipped by
-        # tight_layout once the string wraps to a second line
         ax.text(
             0.0,
             -0.035,
@@ -110,7 +109,7 @@ def main() -> None:
         ax.set_visible(False)
 
     fig.suptitle(
-        "Blood-delivery quadrotor: one episode, flown by the reference pilot",
+        "Subsea inspection ROV: one episode, flown by the reference pilot",
         x=0.012,
         ha="left",
         fontsize=12,
@@ -120,8 +119,8 @@ def main() -> None:
     fig.text(
         0.012,
         0.945,
-        "MuJoCo rigid-body physics - 4 rotors, procedurally regenerated terrain, "
-        "stochastic wind, a payload that really detaches",
+        "MuJoCo rigid-body physics - buoyancy, quadratic drag, a procedurally "
+        "regenerated seabed and a drifting current field",
         ha="left",
         fontsize=8.5,
         color=MUTED,

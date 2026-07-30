@@ -10,10 +10,11 @@ Three things happen here:
 
 The generalisation conditions are deliberately different in kind, not just in
 seed. ``unseen_seeds`` keeps the training distribution and only changes the
-random draw. ``harsh_weather`` doubles the wind the agent ever saw, which tests
-whether it learned to fly or merely memorised a trajectory. ``tight_battery``
-and ``long_range`` squeeze the resources and the geometry. An agent that only
-holds up on the first condition has overfitted to the training distribution.
+random draw. ``strong_current`` roughly doubles the current the agent ever saw,
+which tests whether it learned to hold station or merely memorised a trajectory.
+``tight_battery`` and ``rough_seabed`` squeeze the energy budget and roughen the
+terrain. An agent that only holds up on the first condition has overfitted to
+the training distribution.
 """
 
 from __future__ import annotations
@@ -36,26 +37,34 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def conditions() -> dict[str, tuple[EnvConfig, tuple[int, ...]]]:
-    """The evaluation conditions, from nominal to deliberately hostile."""
+    """The evaluation conditions, from nominal to deliberately hostile.
+
+    The conditions are different in kind, not just in seed. ``unseen_seeds``
+    keeps the training distribution and only changes the random draw.
+    ``strong_current`` roughly doubles the water current the agent ever trained
+    against, which tests whether it learned to hold station or merely memorised a
+    trajectory. ``tight_battery`` and ``rough_seabed`` squeeze the energy budget
+    and roughen the terrain the vehicle has to stay clear of.
+    """
     nominal = EnvConfig()
     return {
         # the distribution the agent was trained on, on its held-out seeds
         "nominal": (nominal, EVAL_SEEDS),
         # same distribution, a completely disjoint block of seeds
         "unseen_seeds": (nominal, GENERALIZATION_SEEDS),
-        # weather well outside anything seen in training
-        "harsh_weather": (
-            replace(nominal, wind_mean_max=8.0, wind_sigma=3.5),
+        # current well outside anything seen in training
+        "strong_current": (
+            replace(nominal, current_mean_max=1.8, current_sigma=0.8),
             GENERALIZATION_SEEDS,
         ),
-        # less energy and less time than the mission was tuned for
+        # less energy than the mission was tuned for
         "tight_battery": (
-            replace(nominal, battery_endurance_s=30.0, cold_chain_s=20.0),
+            replace(nominal, battery_endurance_s=55.0),
             GENERALIZATION_SEEDS,
         ),
-        # the health post pushed further out than it ever was in training
-        "long_range": (
-            replace(nominal, post_x_range=(34.0, 39.0), post_y_range=(-14.0, 14.0)),
+        # a rougher, more cluttered seabed than in training
+        "rough_seabed": (
+            replace(nominal, n_ridges=12),
             GENERALIZATION_SEEDS,
         ),
     }
@@ -63,12 +72,12 @@ def conditions() -> dict[str, tuple[EnvConfig, tuple[int, ...]]]:
 
 def _pilot_predict():
     """The hand-written pilot, wrapped to look like a policy over observations."""
-    from environment.custom_env import ZiplineDeliveryEnv
+    from environment.custom_env import SubseaInspectionEnv
     from tests.scripted_pilot import scripted_policy
 
-    holder: dict[str, ZiplineDeliveryEnv] = {}
+    holder: dict[str, SubseaInspectionEnv] = {}
 
-    def bind(env: ZiplineDeliveryEnv):
+    def bind(env: SubseaInspectionEnv):
         holder["env"] = env
         return lambda _obs: scripted_policy(holder["env"])
 
@@ -110,8 +119,8 @@ def main(args=None) -> None:
             )
             print(
                 f"    {cond_name:<16} return {res.mean_return:8.2f}"
-                f"   delivered {100 * res.success_rate:5.1f}%"
-                f"   miss {res.mean_miss:6.2f} m"
+                f"   survey {100 * res.success_rate:5.1f}%"
+                f"   scan-off {res.mean_miss:5.2f} m"
             )
             if cond_name == "nominal":
                 total = max(1, sum(res.outcomes.values()))
@@ -123,12 +132,12 @@ def main(args=None) -> None:
                 )
 
     # ------------------------------------------------------- reference pilot
-    from environment.custom_env import ZiplineDeliveryEnv
+    from environment.custom_env import SubseaInspectionEnv
     from tests.scripted_pilot import scripted_policy
 
     print("\n  hand-written pilot (reference)")
     for cond_name, (cfg, seeds) in conds.items():
-        env = ZiplineDeliveryEnv(config=cfg)
+        env = SubseaInspectionEnv(config=cfg)
         res = evaluate_policy(lambda _o: scripted_policy(env), seeds=seeds[:episodes], env=env)
         env.close()
         gen_rows.append(
@@ -141,8 +150,8 @@ def main(args=None) -> None:
         )
         print(
             f"    {cond_name:<16} return {res.mean_return:8.2f}"
-            f"   delivered {100 * res.success_rate:5.1f}%"
-            f"   miss {res.mean_miss:6.2f} m"
+            f"   survey {100 * res.success_rate:5.1f}%"
+            f"   scan-off {res.mean_miss:5.2f} m"
         )
         if cond_name == "nominal":
             total = max(1, sum(res.outcomes.values()))

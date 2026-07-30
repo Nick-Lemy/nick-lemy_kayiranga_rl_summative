@@ -9,20 +9,19 @@
     "normalize_returns": false,
     "ent_coef": 0.01,
     "max_grad_norm": 0.5,
-    "timesteps": 300000,
-    "mean_return": -56.21,
-    "std_return": 27.24,
+    "timesteps": 200000,
+    "mean_return": -535.91,
+    "std_return": 301.76,
     "success_rate": 0.0,
-    "mean_miss": NaN,
-    "flight_time": 6.96,
-    "battery_left": 0.776,
-    "convergence_step": 240000,
-    "wall_time_s": 121.3
+    "mean_miss": 2.744,
+    "flight_time": 45.6,
+    "battery_left": 0.706,
+    "convergence_step": 0,
+    "wall_time_s": 136.7
   },
   "outcomes": {
-    "cold_chain_expired": 1,
-    "corridor_breach": 14,
-    "crash": 4,
-    "loss_of_control": 11
+    "capsized": 2,
+    "lost": 15,
+    "timeout": 13
   }
 }

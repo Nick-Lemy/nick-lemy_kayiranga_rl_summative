@@ -1,32 +1,34 @@
-"""Contract tests for the delivery environment.
+"""Contract tests for the subsea inspection environment.
 
 These are the properties the RL results depend on. If any of them break, the
 numbers in the report stop meaning what they say, so they are asserted rather
 than assumed: the spaces match what the algorithms were configured against, the
 episode really is Markovian in the observation, the physics is deterministic
 given a seed, every terminal condition is reachable, and the reward actually
-prefers a good delivery to a bad one.
+prefers a clean inspection to a wasted one.
 
     uv run pytest -q
 """
 
 from __future__ import annotations
 
+import mujoco
 import numpy as np
 import pytest
 
 from environment.custom_env import (
     ACTION_MEANING,
     OBS_DIM,
+    WAYPOINTS,
     Action,
     EnvConfig,
-    ZiplineDeliveryEnv,
+    SubseaInspectionEnv,
 )
 
 
 @pytest.fixture(scope="module")
 def env():
-    e = ZiplineDeliveryEnv()
+    e = SubseaInspectionEnv()
     yield e
     e.close()
 
@@ -36,7 +38,7 @@ def env():
 
 def test_spaces_match_the_trained_configuration(env):
     assert env.action_space.n == len(Action) == 10
-    assert env.observation_space.shape == (OBS_DIM,) == (27,)
+    assert env.observation_space.shape == (OBS_DIM,) == (28,)
     assert set(ACTION_MEANING) == {int(a) for a in Action}
 
 
@@ -58,22 +60,22 @@ def test_setpoints_are_observable():
     """The actions edit persistent setpoints, so they have to be in the state.
 
     Without this the problem is not Markovian: two identical-looking states can
-    have completely different commanded attitudes and therefore different
+    have completely different commanded velocities and therefore different
     dynamics.
     """
-    env = ZiplineDeliveryEnv()
-    obs, _ = env.reset(seed=3)
+    env = SubseaInspectionEnv()
+    env.reset(seed=3)
     for _ in range(4):
-        env.step(int(Action.ROLL_RIGHT))
-    obs_right, *_ = env.step(int(Action.HOVER))
+        env.step(int(Action.SURGE_FWD))
+    obs_fwd, *_ = env.step(int(Action.YAW_LEFT))
 
     env.reset(seed=3)
     for _ in range(4):
-        env.step(int(Action.ROLL_LEFT))
-    obs_left, *_ = env.step(int(Action.HOVER))
+        env.step(int(Action.SURGE_REV))
+    obs_rev, *_ = env.step(int(Action.YAW_LEFT))
 
-    # index 24 is the roll setpoint
-    assert obs_right[24] > 0 > obs_left[24]
+    # index 24 is the surge setpoint
+    assert obs_fwd[24] > 0 > obs_rev[24]
     env.close()
 
 
@@ -81,11 +83,11 @@ def test_setpoints_are_observable():
 
 
 def test_same_seed_gives_the_same_episode():
-    a, b = ZiplineDeliveryEnv(), ZiplineDeliveryEnv()
+    a, b = SubseaInspectionEnv(), SubseaInspectionEnv()
     obs_a, _ = a.reset(seed=1234)
     obs_b, _ = b.reset(seed=1234)
     np.testing.assert_allclose(obs_a, obs_b)
-    for action in [1, 3, 3, 0, 6, 2, 7, 9, 0, 0]:
+    for action in [1, 3, 3, 0, 6, 2, 7, 9, 0, 5]:
         oa, ra, ta, ua, _ = a.step(action)
         ob, rb, tb, ub, _ = b.step(action)
         np.testing.assert_allclose(oa, ob, atol=1e-6)
@@ -95,147 +97,122 @@ def test_same_seed_gives_the_same_episode():
 
 
 def test_reset_randomises_the_mission():
-    """Terrain, drop zone and weather must actually vary, or there is nothing
-    to generalise to."""
-    env = ZiplineDeliveryEnv()
-    posts, terrains, winds = [], [], []
+    """Seabed and current must actually vary, or there is nothing to generalise to."""
+    env = SubseaInspectionEnv()
+    terrains, currents = [], []
     for seed in range(6):
         env.reset(seed=seed)
-        posts.append(tuple(env.post_xy))
         terrains.append(env._hfield.copy())
-        winds.append(tuple(env.wind_mean))
-    assert len({p for p in posts}) == len(posts), "drop zone did not move"
-    assert len({w for w in winds}) == len(winds), "wind did not change"
-    assert not np.allclose(terrains[0], terrains[1]), "terrain did not change"
+        currents.append(tuple(env.current_mean))
+    assert len({c for c in currents}) == len(currents), "current did not change"
+    assert not np.allclose(terrains[0], terrains[1]), "seabed did not change"
     env.close()
 
 
 # ------------------------------------------------------------------ mechanics
 
 
-def test_release_detaches_the_payload():
-    env = ZiplineDeliveryEnv()
+def _teleport(env, xyz):
+    """Place the vehicle at a world point, at rest, and settle the physics."""
+    env.data.qpos[env._qadr_rov : env._qadr_rov + 3] = xyz
+    env.data.qpos[env._qadr_rov + 3 : env._qadr_rov + 7] = [1.0, 0.0, 0.0, 0.0]
+    env.data.qvel[:] = 0.0
+    mujoco.mj_forward(env.model, env.data)
+
+
+def test_inspect_in_range_advances_the_survey():
+    env = SubseaInspectionEnv()
     env.reset(seed=7)
-    assert env.attached and env.data.eq_active[env._eq_weld] == 1
-
-    gap_before = np.linalg.norm(env._drone_pos() - env._payload_pos())
-    env.step(int(Action.RELEASE_PAYLOAD))
-    assert not env.attached and env.data.eq_active[env._eq_weld] == 0
-
-    for _ in range(12):
-        env.step(int(Action.HOVER))
-    gap_after = np.linalg.norm(env._drone_pos() - env._payload_pos())
-    assert gap_after > gap_before + 0.5, "payload did not fall away from the aircraft"
+    assert env.active_wp == 0
+    _teleport(env, WAYPOINTS[0])
+    _, reward, term, trunc, info = env.step(int(Action.INSPECT))
+    assert env.active_wp == 1, "a scan inside the hoop did not advance the survey"
+    assert reward > 20.0, f"a clean scan should pay well, got {reward:.1f}"
+    assert not (term or trunc)
     env.close()
 
 
-def test_payload_descends_under_canopy_not_free_fall():
-    """The chute is what makes the wind matter at release; check it is doing work."""
-    env = ZiplineDeliveryEnv()
-    env.reset(seed=11)
-    for _ in range(30):  # climb first so there is room to fall
-        env.step(int(Action.THROTTLE_UP))
-    env.step(int(Action.RELEASE_PAYLOAD))
-    speeds = []
-    for _ in range(40):
-        env.step(int(Action.HOVER))
-        speeds.append(abs(env.data.qvel[env._dadr_payload + 2]))
-    # free fall over 4 s would pass 30 m/s; the canopy should cap it near 5
-    assert max(speeds) < 12.0, f"payload fell too fast: {max(speeds):.1f} m/s"
+def test_inspect_out_of_range_is_penalised_and_changes_nothing():
+    env = SubseaInspectionEnv()
+    env.reset(seed=7)
+    # far from station 0, well outside the hoop
+    _teleport(env, [WAYPOINTS[0][0], WAYPOINTS[0][1] + 12.0, 1.2])
+    before = env.active_wp
+    _, reward, *_ = env.step(int(Action.INSPECT))
+    assert env.active_wp == before, "a scan with nothing in range advanced the survey"
+    assert reward < 0, "a wasted scan should cost something"
     env.close()
 
 
-def test_cold_chain_and_battery_only_run_down():
-    env = ZiplineDeliveryEnv()
+def test_full_survey_via_teleport_scores_high():
+    """Inspecting all four stations in order must terminate as survey_complete."""
+    env = SubseaInspectionEnv()
+    env.reset(seed=9)
+    total, outcome = 0.0, None
+    for wp in WAYPOINTS:
+        # sit just off the hoop centre so we are still inside scan range but
+        # clear of the pipe and the manifold riser that occupy the exact points
+        _teleport(env, [wp[0], wp[1] + 1.5, wp[2]])
+        _, r, term, trunc, info = env.step(int(Action.INSPECT))
+        total += r
+        outcome = info["outcome"]
+        if term or trunc:
+            break
+    assert outcome == "survey_complete", outcome
+    assert info["success"] is True
+    assert total > 200.0, f"a perfect survey should score well, got {total:.1f}"
+    env.close()
+
+
+def test_battery_only_runs_down():
+    env = SubseaInspectionEnv()
     env.reset(seed=5)
-    prev_bat, prev_cold = env.battery, env.cold_chain
+    prev = env.battery
     for _ in range(60):
-        env.step(int(Action.HOVER))
-        assert env.battery <= prev_bat + 1e-9
-        assert env.cold_chain <= prev_cold + 1e-9
-        prev_bat, prev_cold = env.battery, env.cold_chain
-    assert env.battery < 1.0 and env.cold_chain < 1.0
+        env.step(int(Action.SURGE_FWD))
+        assert env.battery <= prev + 1e-9
+        prev = env.battery
+    assert env.battery < 1.0
     env.close()
 
 
 # -------------------------------------------------------------------- rewards
 
 
-def test_hovering_at_the_pad_runs_the_clock_out():
+def test_idling_runs_the_clock_out_and_is_clearly_bad():
     """Doing nothing must be clearly bad, or the agent can farm shaping reward."""
-    env = ZiplineDeliveryEnv()
+    env = SubseaInspectionEnv()
     env.reset(seed=2)
-    total, done = 0.0, False
+    total, done, info = 0.0, False, {}
     while not done:
-        _, r, term, trunc, info = env.step(int(Action.HOVER))
+        _, r, term, trunc, info = env.step(int(Action.HOLD))
         total += r
         done = term or trunc
-    assert total < -50, f"idling scored {total:.1f}, which is not punishing enough"
-    assert info["outcome"] != "delivered"
+    assert total < -20, f"idling scored {total:.1f}, which is not punishing enough"
+    assert info["outcome"] != "survey_complete"
     env.close()
 
 
-def test_accurate_delivery_beats_dumping_the_payload():
-    """The reward has to rank a good drop above a bad one by a wide margin."""
-    cfg = EnvConfig()
-    env = ZiplineDeliveryEnv(config=cfg)
-
-    # dump it immediately, at the launch pad, ~60 m from the zone
-    env.reset(seed=21)
-    dumped, done = 0.0, False
-    _, r, term, trunc, _ = env.step(int(Action.RELEASE_PAYLOAD))
-    dumped += r
-    done = term or trunc
-    while not done:
-        _, r, term, trunc, dump_info = env.step(int(Action.HOVER))
-        dumped += r
-        done = term or trunc
-
-    # teleport the aircraft over the zone, then release
-    env.reset(seed=21)
-    env.data.qpos[env._qadr_drone : env._qadr_drone + 3] = env.aim_point
-    env.data.qpos[env._qadr_payload : env._qadr_payload + 3] = env.aim_point - [0, 0, 0.155]
-    env.data.qvel[:] = 0
-    import mujoco
-
-    mujoco.mj_forward(env.model, env.data)
-    good, done = 0.0, False
-    _, r, term, trunc, _ = env.step(int(Action.RELEASE_PAYLOAD))
-    good += r
-    done = term or trunc
-    while not done:
-        _, r, term, trunc, good_info = env.step(int(Action.HOVER))
-        good += r
-        done = term or trunc
-
-    assert good_info["outcome"] == "delivered", good_info["outcome"]
-    assert dump_info["outcome"] == "missed_zone", dump_info["outcome"]
-    assert good > dumped + 100, f"good drop {good:.1f} vs dump {dumped:.1f}"
-    env.close()
-
-
-def test_corridor_breach_terminates():
-    env = ZiplineDeliveryEnv()
+def test_leaving_the_survey_box_terminates():
+    env = SubseaInspectionEnv()
     env.reset(seed=13)
-    # fly sideways until the regulated airspace runs out
     outcome = None
     for _ in range(env.max_steps):
-        _, _, term, trunc, info = env.step(int(Action.ROLL_LEFT))
+        _, _, term, trunc, info = env.step(int(Action.ASCEND))  # climb until surfaced
         if term or trunc:
             outcome = info["outcome"]
             break
-    assert outcome is not None, "flying sideways for a whole episode never terminated"
+    assert outcome == "lost", f"surfacing should end the episode as 'lost', got {outcome}"
     env.close()
 
 
 def test_env_config_is_respected():
-    tight = EnvConfig(cold_chain_s=4.0)
-    env = ZiplineDeliveryEnv(config=tight)
+    tight = EnvConfig(battery_endurance_s=6.0)
+    env = SubseaInspectionEnv(config=tight)
     env.reset(seed=1)
     done, info = False, {}
     while not done:
-        _, _, term, trunc, info = env.step(int(Action.HOVER))
+        _, _, term, trunc, info = env.step(int(Action.SURGE_FWD))
         done = term or trunc
-    assert info["outcome"] == "cold_chain_expired"
-    assert info["flight_time"] <= 5.0
+    assert info["outcome"] == "battery_depleted", info["outcome"]
     env.close()

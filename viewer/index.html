@@ -3,18 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Blood Delivery UAV — episode replay</title>
+<title>Subsea Inspection ROV — episode replay</title>
 
 <!--
   Browser replay of an episode exported by the RL environment.
 
   This is the "serialise it and hand it to a frontend" half of the project. The
-  Python side writes a self-contained JSON trace (terrain heightfield, drop-zone
-  geometry, corridor limits, and one record per control step with the aircraft
-  and payload poses, the action taken, the reward, and the consumables). Nothing
-  here knows anything about MuJoCo: the page rebuilds the scene from the JSON
-  alone, which is exactly what a web or mobile operations dashboard would do
-  against a `GET /episodes/:id` endpoint.
+  Python side writes a self-contained JSON trace (seabed heightfield, pipeline
+  polyline, inspection waypoints, survey bounds, and one record per control step
+  with the vehicle pose, the action taken, the reward, the battery, the active
+  station and the current vector). Nothing here knows anything about MuJoCo: the
+  page rebuilds the scene from the JSON alone, which is exactly what a web or
+  mobile operations dashboard would do against a `GET /episodes/:id` endpoint.
 
   Loading a trace, in order of preference:
     1. ?src=<url>            fetches that URL
@@ -30,13 +30,13 @@
 
 <style>
   :root {
-    --surface-0: #0d1117;
-    --surface-1: rgba(18, 24, 34, 0.86);
+    --surface-0: #060e14;
+    --surface-1: rgba(10, 22, 30, 0.86);
     --border:    rgba(255, 255, 255, 0.10);
-    --text-1:    #f2f4f8;
-    --text-2:    #aab3c0;
-    --text-3:    #6f7885;
-    --accent:    #58a6ff;
+    --text-1:    #eaf4f8;
+    --text-2:    #9fb6c0;
+    --text-3:    #61757f;
+    --accent:    #23c6b6;
     --good:      #2ecc71;
     --warn:      #f0b429;
     --bad:       #ff6b6b;
@@ -64,7 +64,7 @@
   }
 
   /* ---------- telemetry ---------- */
-  #hud { top: 16px; left: 16px; width: 268px; }
+  #hud { top: 16px; left: 16px; width: 272px; }
   #hud h1 {
     margin: 0 0 2px; font-size: 13px; letter-spacing: .09em;
     text-transform: uppercase; color: var(--accent);
@@ -86,7 +86,7 @@
 
   #action {
     margin-top: 12px; padding: 8px 10px; border-radius: 8px;
-    background: rgba(88,166,255,.12); border: 1px solid rgba(88,166,255,.28);
+    background: rgba(35,198,182,.12); border: 1px solid rgba(35,198,182,.28);
     font-family: var(--mono); font-size: 12px; text-align: center; letter-spacing: .04em;
   }
   #outcome {
@@ -107,7 +107,7 @@
     cursor: pointer; white-space: nowrap; transition: background .15s;
   }
   button:hover { background: rgba(255,255,255,.14); }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #06121f; font-weight: 600; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #04140f; font-weight: 600; }
   input[type=range] { flex: 1; accent-color: var(--accent); min-width: 90px; }
   #tstamp { font-family: var(--mono); font-size: 12px; color: var(--text-2); min-width: 84px; text-align: right; }
   label.speed { font-size: 11px; color: var(--text-3); display: flex; align-items: center; gap: 5px; }
@@ -134,7 +134,7 @@
   #loader p { color: var(--text-2); font-size: 13px; line-height: 1.6; margin: 0 0 18px; }
   #loader code {
     font-family: var(--mono); font-size: 12px; color: var(--accent);
-    background: rgba(88,166,255,.10); padding: 2px 6px; border-radius: 4px;
+    background: rgba(35,198,182,.10); padding: 2px 6px; border-radius: 4px;
   }
   .hint { position: fixed; bottom: 16px; left: 16px; font-size: 11px; color: var(--text-3); }
 
@@ -149,13 +149,13 @@
 <div id="scene"></div>
 
 <div class="panel" id="hud">
-  <h1>Blood Delivery UAV</h1>
+  <h1>Subsea Inspection ROV</h1>
   <div class="sub" id="agent">—</div>
 
   <div class="row"><span class="k">mission time</span><span class="v" id="v-time">0.0 s</span></div>
-  <div class="row"><span class="k">altitude AGL</span><span class="v" id="v-alt">0.0 m</span></div>
-  <div class="row"><span class="k">range to zone</span><span class="v" id="v-range">0.0 m</span></div>
-  <div class="row"><span class="k">wind</span><span class="v" id="v-wind">0.0 m/s</span></div>
+  <div class="row"><span class="k">depth above seabed</span><span class="v" id="v-alt">0.0 m</span></div>
+  <div class="row"><span class="k">range to station</span><span class="v" id="v-range">0.0 m</span></div>
+  <div class="row"><span class="k">current</span><span class="v" id="v-cur">0.0 m/s</span></div>
   <div class="row"><span class="k">return</span><span class="v" id="v-return">0.00</span></div>
 
   <div class="meter">
@@ -163,11 +163,11 @@
     <div class="track"><div class="fill" id="f-bat" style="width:100%;background:var(--good)"></div></div>
   </div>
   <div class="meter">
-    <div class="lbl"><span>Cold chain</span><span id="v-cold">100%</span></div>
-    <div class="track"><div class="fill" id="f-cold" style="width:100%;background:var(--good)"></div></div>
+    <div class="lbl"><span>Survey progress</span><span id="v-survey">0 / 4</span></div>
+    <div class="track"><div class="fill" id="f-survey" style="width:0%;background:var(--accent)"></div></div>
   </div>
 
-  <div id="action">HOVER</div>
+  <div id="action">HOLD</div>
   <div id="outcome"></div>
 </div>
 
@@ -213,7 +213,6 @@ import * as THREE from 'three';
 
 /* ------------------------------------------------------------------ helpers */
 const $ = (id) => document.getElementById(id);
-const lerp = (a, b, t) => a + (b - a) * t;
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 
 /* --------------------------------------------------------------- renderer */
@@ -225,17 +224,18 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 $('scene').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x8fb8d8);
-scene.fog = new THREE.Fog(0x8fb8d8, 60, 190);
+/* deep-water look: blue-green background and dense fog so distance fades out */
+scene.background = new THREE.Color(0x08313c);
+scene.fog = new THREE.Fog(0x08313c, 18, 95);
 
 const camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.1, 600);
 
-scene.add(new THREE.HemisphereLight(0xbcd8f0, 0x3d5233, 1.05));
-const sun = new THREE.DirectionalLight(0xffeedd, 1.5);
-sun.position.set(-40, 60, 30);
+scene.add(new THREE.HemisphereLight(0x2f7f8c, 0x040e12, 1.15));
+const sun = new THREE.DirectionalLight(0x9fe6dc, 1.05);
+sun.position.set(-24, 60, 20);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
-Object.assign(sun.shadow.camera, { left: -70, right: 70, top: 70, bottom: -70, near: 1, far: 220 });
+Object.assign(sun.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, near: 1, far: 200 });
 scene.add(sun);
 
 addEventListener('resize', () => {
@@ -247,7 +247,7 @@ addEventListener('resize', () => {
 /* ---------------------------------------------------- minimal orbit control
    Three's OrbitControls lives in the examples bundle; this page only needs
    orbit + zoom, so it carries its own 30-line version and stays dependency-free. */
-const orbit = { theta: -0.55, phi: 1.16, dist: 26, drag: false, px: 0, py: 0 };
+const orbit = { theta: -0.55, phi: 1.16, dist: 24, drag: false, px: 0, py: 0 };
 const dom = renderer.domElement;
 dom.addEventListener('pointerdown', (e) => { orbit.drag = true; orbit.px = e.clientX; orbit.py = e.clientY; });
 addEventListener('pointerup', () => { orbit.drag = false; });
@@ -259,12 +259,12 @@ addEventListener('pointermove', (e) => {
 });
 dom.addEventListener('wheel', (e) => {
   e.preventDefault();
-  orbit.dist = Math.max(6, Math.min(150, orbit.dist * (1 + Math.sign(e.deltaY) * 0.10)));
+  orbit.dist = Math.max(5, Math.min(140, orbit.dist * (1 + Math.sign(e.deltaY) * 0.10)));
 }, { passive: false });
 
 /* ------------------------------------------------------------------- state */
 let trace = null, frames = [], root = new THREE.Group();
-let drone = null, payload = null, chute = null, trail = null;
+let rov = null, trail = null, hoops = [];
 let idx = 0, playing = true, speed = 1, camMode = 'chase', cumulative = [];
 let clock = new THREE.Clock();
 
@@ -273,150 +273,141 @@ const P = (p) => new THREE.Vector3(p[0], p[2], -p[1]);
 const Q = (q) => new THREE.Quaternion(q[1], q[3], -q[2], q[0]);
 
 /* ------------------------------------------------------------ scene builder */
-function buildTerrain(t) {
+function buildSeabed(t) {
   const geo = new THREE.PlaneGeometry(t.size_x * 2, t.size_y * 2, t.cols - 1, t.rows - 1);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;
   for (let r = 0; r < t.rows; r++) {
     for (let c = 0; c < t.cols; c++) {
-      // the plane's vertex grid runs -y..+y after the rotation, hence rows reversed
       const v = r * t.cols + c;
       pos.setY(v, t.heights[(t.rows - 1 - r) * t.cols + c] * t.elevation);
     }
   }
   geo.computeVertexNormals();
 
-  // tint by altitude so the relief reads without a texture
+  // tint by height: dark silt in the channel, paler sand on the ridges
   const colors = [];
-  const low = new THREE.Color(0x4a7c3f), high = new THREE.Color(0x86a86b);
+  const low = new THREE.Color(0x1d2a2b), high = new THREE.Color(0x4a5240);
   for (let i = 0; i < pos.count; i++) {
-    const h = clamp01(pos.getY(i) / (t.elevation * 0.75));
+    const h = clamp01(pos.getY(i) / (t.elevation * 0.7));
     colors.push(...low.clone().lerp(high, h).toArray());
   }
   geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 
   const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
-    vertexColors: true, roughness: 0.97, metalness: 0.0, flatShading: false,
+    vertexColors: true, roughness: 0.99, metalness: 0.0,
   }));
   mesh.receiveShadow = true;
   return mesh;
 }
 
-function buildDrone() {
+function buildPipeline(nodes) {
+  // nodes are [x, y] pairs on the seabed channel at z = 0.4
+  const pts = nodes.map(([x, y]) => new THREE.Vector3(x, 0.4, -y));
+  const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.0);
+  const tube = new THREE.Mesh(
+    new THREE.TubeGeometry(curve, nodes.length * 12, 0.38, 12, false),
+    new THREE.MeshStandardMaterial({ color: 0x9c9457, roughness: 0.7, metalness: 0.25 })
+  );
+  tube.castShadow = true; tube.receiveShadow = true;
+  return tube;
+}
+
+function buildStation(pos) {
   const g = new THREE.Group();
-  const white = new THREE.MeshStandardMaterial({ color: 0xf2f4f8, roughness: 0.42, metalness: 0.12 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x22262e, roughness: 0.55 });
+  const dk = new THREE.MeshStandardMaterial({ color: 0x2a3138, roughness: 0.75, metalness: 0.3 });
+  const lt = new THREE.MeshStandardMaterial({ color: 0xc6cbd0, roughness: 0.5, metalness: 0.4 });
+  const base = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.6, 4.4), dk);
+  base.position.y = 0.3; base.castShadow = true; base.receiveShadow = true; g.add(base);
+  const riser = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 6, 16), lt);
+  riser.position.y = 3.0; riser.castShadow = true; g.add(riser);
+  g.position.set(pos.x, pos.y, pos.z);
+  return g;
+}
 
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.09, 0.18), white);
-  body.castShadow = true; g.add(body);
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.085, 16, 12), white);
-  nose.scale.set(1.1, 0.55, 0.9); nose.position.x = 0.19; g.add(nose);
+function buildHoop(pos) {
+  const g = new THREE.Group();
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(2.2, 0.09, 10, 40),
+    new THREE.MeshStandardMaterial({ color: 0x18c26a, emissive: 0x0a3c25, roughness: 0.5 })
+  );
+  ring.rotation.y = Math.PI / 2;          // face down the survey line (world x)
+  g.add(ring);
+  const glow = new THREE.Mesh(
+    new THREE.SphereGeometry(0.42, 16, 12),
+    new THREE.MeshBasicMaterial({ color: 0x2ee0c0, transparent: true, opacity: 0.5 })
+  );
+  g.add(glow);
+  g.position.copy(pos);
+  g.userData = { ring, glow, mat: ring.material };
+  return g;
+}
 
-  const arm = new THREE.CylinderGeometry(0.014, 0.014, 0.56, 8);
+function buildRov() {
+  const g = new THREE.Group();
+  const yellow = new THREE.MeshStandardMaterial({ color: 0xf4be1e, roughness: 0.5, metalness: 0.15 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1b1f24, roughness: 0.6 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0x9fdcec, roughness: 0.2, metalness: 0.1, transparent: true, opacity: 0.6 });
+
+  const hull = new THREE.Mesh(new THREE.SphereGeometry(0.55, 20, 14), yellow);
+  hull.scale.set(1.0, 0.52, 0.55); hull.castShadow = true; g.add(hull);
+  const tail = new THREE.Mesh(new THREE.SphereGeometry(0.22, 14, 10), yellow);
+  tail.scale.set(1.0, 0.5, 0.5); tail.position.x = -0.62; g.add(tail);
+
+  const pod = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.18, 0.32), dark);
+  pod.position.set(0.10, -0.30, 0); pod.castShadow = true; g.add(pod);
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.11, 14, 10), glass);
+  dome.position.set(0.30, -0.30, 0); g.add(dome);
+
+  const skidGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.6, 8);
   for (const s of [1, -1]) {
-    const a = new THREE.Mesh(arm, dark);
-    a.rotation.set(0, 0, Math.PI / 2);
-    a.rotation.y = s * Math.PI / 4;
-    g.add(a);
+    const sk = new THREE.Mesh(skidGeo, dark);
+    sk.rotation.z = Math.PI / 2; sk.position.set(0, -0.34, s * 0.24); g.add(sk);
   }
-  const rotors = [];
-  for (const [x, z] of [[0.2, 0.2], [-0.2, 0.2], [-0.2, -0.2], [0.2, -0.2]]) {
-    const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.05, 10), dark);
-    pod.position.set(x, 0.03, z); g.add(pod);
+  const props = [];
+  for (const [x, z] of [[0.34, 0.34], [-0.40, 0.34], [-0.40, -0.34], [0.34, -0.34]]) {
+    const shroud = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.12, 12), dark);
+    shroud.rotation.z = Math.PI / 2; shroud.position.set(x, 0.02, z); g.add(shroud);
     const disc = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.105, 0.105, 0.006, 20),
-      new THREE.MeshStandardMaterial({ color: 0x2a2f38, transparent: true, opacity: 0.45 })
+      new THREE.CylinderGeometry(0.085, 0.085, 0.02, 12),
+      new THREE.MeshStandardMaterial({ color: 0x2a2f38, transparent: true, opacity: 0.5 })
     );
-    disc.position.set(x, 0.062, z); g.add(disc); rotors.push(disc);
+    disc.rotation.z = Math.PI / 2; disc.position.set(x, 0.02, z); g.add(disc); props.push(disc);
   }
-  g.userData.rotors = rotors;
+  g.userData.props = props;
   return g;
 }
 
-function buildPayload() {
-  const g = new THREE.Group();
-  const box = new THREE.Mesh(
-    new THREE.BoxGeometry(0.15, 0.11, 0.11),
-    new THREE.MeshStandardMaterial({ color: 0xeef2f7, roughness: 0.7 })
-  );
-  box.castShadow = true; g.add(box);
-  const red = new THREE.MeshStandardMaterial({ color: 0xc2181f, roughness: 0.6 });
-  const v = new THREE.Mesh(new THREE.BoxGeometry(0.155, 0.062, 0.026), red); g.add(v);
-  const h = new THREE.Mesh(new THREE.BoxGeometry(0.155, 0.026, 0.062), red); g.add(h);
-  return g;
-}
-
-function buildChute() {
-  const canopy = new THREE.Mesh(
-    new THREE.SphereGeometry(0.42, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2),
-    new THREE.MeshStandardMaterial({ color: 0xff8a3d, roughness: 0.85, side: THREE.DoubleSide })
-  );
-  canopy.position.y = 0.55;
-  const g = new THREE.Group(); g.add(canopy); g.visible = false;
-  return g;
-}
-
-function buildScene(t) {
+function buildScene(data) {
   scene.remove(root);
   root = new THREE.Group();
   scene.add(root);
 
-  root.add(buildTerrain(t.terrain));
+  root.add(buildSeabed(data.seabed));
+  root.add(buildPipeline(data.pipeline));
 
-  const target = P(t.drop_target);
-
-  // drop zone: ring on the ground + a soft column so it is visible from the air
-  const ring = new THREE.Mesh(
-    new THREE.CylinderGeometry(t.zone_radius, t.zone_radius, 0.05, 48),
-    new THREE.MeshStandardMaterial({ color: 0x18c26a, emissive: 0x0d5c33, roughness: 0.6 })
-  );
-  ring.position.copy(target).setY(target.y + 0.03);
-  root.add(ring);
-
-  const column = new THREE.Mesh(
-    new THREE.CylinderGeometry(t.zone_radius, t.zone_radius, 9, 40, 1, true),
-    new THREE.MeshBasicMaterial({ color: 0x2ee07d, transparent: true, opacity: 0.13, side: THREE.DoubleSide })
-  );
-  column.position.copy(target).setY(target.y + 4.5);
-  root.add(column);
-
-  // clinic beside the zone, depot beside the launch pad
-  const wall = new THREE.MeshStandardMaterial({ color: 0xe8e6df, roughness: 0.9 });
-  const roof = new THREE.MeshStandardMaterial({ color: 0x8c3d2e, roughness: 0.85 });
-  const building = (x, z, w, d, h, y) => {
-    const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wall);
-    b.position.set(x, y + h / 2, z); b.castShadow = true; b.receiveShadow = true; root.add(b);
-    const r = new THREE.Mesh(new THREE.BoxGeometry(w * 1.08, 0.5, d * 1.08), roof);
-    r.position.set(x, y + h + 0.25, z); r.castShadow = true; root.add(r);
-  };
-  building(target.x - 7.5, target.z - 4.5, 6, 9, 4.8, target.y);
-  building(t.launch[0] - 6, -11, 8, 12, 6, 0);   // beside the pad, not behind it
-
-  const pad = new THREE.Mesh(
-    new THREE.CylinderGeometry(3, 3, 0.5, 40),
-    new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.8 })
-  );
-  pad.position.set(t.launch[0], 0.25, 0); pad.receiveShadow = true; root.add(pad);
-
-  // corridor walls, drawn as translucent planes at the lateral limits
-  const cw = t.corridor.half_width;
-  const wallMat = new THREE.MeshBasicMaterial({
-    color: 0xffa23d, transparent: true, opacity: 0.07, side: THREE.DoubleSide,
+  // inspection hoops; the last waypoint also carries the manifold station
+  hoops = [];
+  data.waypoints.forEach((wp, i) => {
+    const p = P(wp);
+    if (i === data.waypoints.length - 1) root.add(buildStation(P([wp[0], wp[1], 0])));
+    const hoop = buildHoop(p);
+    hoops.push(hoop); root.add(hoop);
   });
-  for (const s of [1, -1]) {
-    const p = new THREE.Mesh(new THREE.PlaneGeometry(80, 22), wallMat);
-    p.position.set(0, 11, -s * cw);
-    root.add(p);
-  }
 
-  drone = buildDrone(); root.add(drone);
-  payload = buildPayload(); root.add(payload);
-  chute = buildChute(); root.add(chute);
+  // launch buoy marker
+  const buoy = new THREE.Mesh(
+    new THREE.SphereGeometry(0.5, 16, 12),
+    new THREE.MeshStandardMaterial({ color: 0xf05a3d, roughness: 0.6 })
+  );
+  buoy.position.set(data.launch[0], 1.0, -data.launch[1]); root.add(buoy);
 
-  // flight path, revealed progressively as the replay advances
+  rov = buildRov(); root.add(rov);
+
+  // survey path, revealed progressively as the replay advances
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(frames.length * 3), 3));
-  trail = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0x58a6ff, transparent: true, opacity: 0.75 }));
+  trail = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0x23c6b6, transparent: true, opacity: 0.8 }));
   trail.frustumCulled = false;
   root.add(trail);
 }
@@ -426,51 +417,59 @@ function applyFrame(i, alpha = 0) {
   const f = frames[i];
   const g = frames[Math.min(i + 1, frames.length - 1)];
 
-  const dp = P(f.drone.p).lerp(P(g.drone.p), alpha);
-  drone.position.copy(dp);
-  drone.quaternion.copy(Q(f.drone.q).slerp(Q(g.drone.q), alpha));
+  const rp = P(f.rov.p).lerp(P(g.rov.p), alpha);
+  rov.position.copy(rp);
+  rov.quaternion.copy(Q(f.rov.q).slerp(Q(g.rov.q), alpha));
 
-  payload.position.copy(P(f.payload.p).lerp(P(g.payload.p), alpha));
-  payload.quaternion.copy(Q(f.payload.q).slerp(Q(g.payload.q), alpha));
+  for (const d of rov.userData.props) d.rotation.x += 0.9;
 
-  // the canopy only exists after release, and only while still falling
-  const falling = !f.att && payload.position.y > (P(trace.drop_target).y + 0.2);
-  chute.visible = falling;
-  if (falling) chute.position.copy(payload.position);
-
-  for (const r of drone.userData.rotors) r.rotation.y += 1.1;
+  // colour the hoops by survey state: done, active (pulsing), pending
+  const pulse = 0.5 + 0.5 * Math.sin(performance.now() * 0.006);
+  hoops.forEach((h, k) => {
+    if (k < f.wp) { h.userData.mat.color.setHex(0x18c26a); h.userData.mat.emissive.setHex(0x0a3c25); h.userData.glow.visible = false; }
+    else if (k === f.wp) { h.userData.mat.color.setHex(0x2ee0c0); h.userData.mat.emissive.setHex(0x1b8f7d); h.userData.glow.visible = true; h.userData.glow.material.opacity = 0.3 + 0.5 * pulse; }
+    else { h.userData.mat.color.setHex(0x3a5a55); h.userData.mat.emissive.setHex(0x0a1f1c); h.userData.glow.visible = false; }
+  });
 
   // trail
   const pos = trail.geometry.attributes.position;
   for (let k = 0; k <= i; k++) {
-    const p = P(frames[k].drone.p);
+    const p = P(frames[k].rov.p);
     pos.setXYZ(k, p.x, p.y, p.z);
   }
   trail.geometry.setDrawRange(0, i + 1);
   pos.needsUpdate = true;
 
-  updateHud(i, dp);
+  updateHud(i, rp);
 }
 
-function updateHud(i, dp) {
+function activeTarget(f) {
+  const wps = trace.waypoints;
+  return P(wps[Math.min(f.wp, wps.length - 1)]);
+}
+
+function updateHud(i, rp) {
   const f = frames[i];
-  const target = P(trace.drop_target);
-  const range = Math.hypot(dp.x - target.x, dp.z - target.z);
+  const target = activeTarget(f);
+  const range = Math.hypot(rp.x - target.x, rp.z - target.z);
+  const seabedY = 0;  // channel is flat at 0; depth above seabed ~ y
 
   $('v-time').textContent = f.t.toFixed(1) + ' s';
-  $('v-alt').textContent = dp.y.toFixed(1) + ' m';
+  $('v-alt').textContent = rp.y.toFixed(1) + ' m';
   $('v-range').textContent = range.toFixed(1) + ' m';
-  $('v-wind').textContent = Math.hypot(f.wind[0], f.wind[1]).toFixed(1) + ' m/s';
+  $('v-cur').textContent = Math.hypot(f.cur[0], f.cur[1]).toFixed(2) + ' m/s';
   $('v-return').textContent = cumulative[i].toFixed(2);
   $('action').textContent = trace.actions[f.a] ?? ('action ' + f.a);
 
-  for (const [key, val] of [['bat', f.bat], ['cold', f.cold]]) {
-    const pct = clamp01(val) * 100;
-    $('v-' + key).textContent = Math.round(pct) + '%';
-    const fill = $('f-' + key);
-    fill.style.width = pct + '%';
-    fill.style.background = pct > 50 ? 'var(--good)' : pct > 20 ? 'var(--warn)' : 'var(--bad)';
-  }
+  const pct = clamp01(f.bat) * 100;
+  $('v-bat').textContent = Math.round(pct) + '%';
+  const bf = $('f-bat');
+  bf.style.width = pct + '%';
+  bf.style.background = pct > 50 ? 'var(--good)' : pct > 20 ? 'var(--warn)' : 'var(--bad)';
+
+  const total = trace.waypoints.length;
+  $('v-survey').textContent = f.wp + ' / ' + total;
+  $('f-survey').style.width = (100 * f.wp / total) + '%';
 
   $('scrub').value = String((i / (frames.length - 1)) * 100);
   $('tstamp').textContent = `${f.t.toFixed(1)} / ${frames[frames.length - 1].t.toFixed(1)} s`;
@@ -478,12 +477,12 @@ function updateHud(i, dp) {
   const banner = $('outcome');
   if (i >= frames.length - 1) {
     const s = trace.summary || {};
-    const good = s.outcome === 'delivered';
+    const good = s.outcome === 'survey_complete';
     banner.style.display = 'block';
     banner.style.background = good ? 'rgba(46,204,113,.16)' : 'rgba(255,107,107,.16)';
     banner.style.color = good ? 'var(--good)' : 'var(--bad)';
     banner.textContent = (s.outcome || 'finished').replace(/_/g, ' ').toUpperCase()
-      + (good && s.miss_distance != null ? ` · miss ${s.miss_distance.toFixed(2)} m` : '');
+      + (good && s.inspect_error != null ? ` · scan offset ${s.inspect_error.toFixed(2)} m` : '');
   } else {
     banner.style.display = 'none';
   }
@@ -504,7 +503,7 @@ function drawSpark(upto) {
   sctx.lineWidth = 1;
   sctx.beginPath(); sctx.moveTo(0, y0); sctx.lineTo(w, y0); sctx.stroke();
 
-  sctx.strokeStyle = '#58a6ff';
+  sctx.strokeStyle = '#23c6b6';
   sctx.lineWidth = 2;
   sctx.lineJoin = 'round';
   sctx.beginPath();
@@ -517,9 +516,9 @@ function drawSpark(upto) {
 }
 
 /* ------------------------------------------------------------------ camera */
-function placeCamera(dp) {
+function placeCamera(rp) {
   if (camMode === 'orbit') {
-    const t = new THREE.Vector3(0, 4, 0);
+    const t = new THREE.Vector3(0, 2, 0);
     camera.position.set(
       t.x + orbit.dist * Math.sin(orbit.phi) * Math.cos(orbit.theta),
       t.y + orbit.dist * Math.cos(orbit.phi),
@@ -529,17 +528,16 @@ function placeCamera(dp) {
     return;
   }
   if (camMode === 'mission') {
-    const mid = P(trace.drop_target).clone().add(new THREE.Vector3(trace.launch[0], 0, 0)).multiplyScalar(0.5);
-    camera.position.set(mid.x, 46, mid.z + 58);
-    camera.lookAt(mid.x, 0, mid.z);
+    camera.position.set(0, 40, 66);
+    camera.lookAt(0, 0, 0);
     return;
   }
-  // chase: sit behind the aircraft along its heading, with a little damping
-  const fwd = new THREE.Vector3(1, 0, 0).applyQuaternion(drone.quaternion);
+  // chase: sit behind the vehicle along its heading, with a little damping
+  const fwd = new THREE.Vector3(1, 0, 0).applyQuaternion(rov.quaternion);
   fwd.y = 0; fwd.normalize();
-  const want = dp.clone().addScaledVector(fwd, -orbit.dist * 0.28).add(new THREE.Vector3(0, orbit.dist * 0.12, 0));
+  const want = rp.clone().addScaledVector(fwd, -orbit.dist * 0.26).add(new THREE.Vector3(0, orbit.dist * 0.14, 0));
   camera.position.lerp(want, 0.12);
-  camera.lookAt(dp);
+  camera.lookAt(rp);
 }
 
 /* -------------------------------------------------------------------- loop */
@@ -557,7 +555,7 @@ function animate() {
   applyFrame(idx, idx < frames.length - 1 ? alpha : 0);
 
   if (idx >= frames.length - 1 && playing) { playing = false; $('btn-play').textContent = 'Replay'; }
-  placeCamera(drone.position);
+  placeCamera(rov.position);
   renderer.render(scene, camera);
 }
 

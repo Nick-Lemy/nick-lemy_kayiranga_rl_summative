@@ -13,12 +13,12 @@ import json
 import numpy as np
 import pytest
 
-from environment.custom_env import Action, ZiplineDeliveryEnv
+from environment.custom_env import Action, SubseaInspectionEnv
 
 
 @pytest.fixture(scope="module")
 def trace(tmp_path_factory) -> dict:
-    env = ZiplineDeliveryEnv(record_trace=True)
+    env = SubseaInspectionEnv(record_trace=True)
     env.reset(seed=120)
     rng = np.random.default_rng(0)
     done = False
@@ -31,33 +31,34 @@ def trace(tmp_path_factory) -> dict:
 
 
 def test_header_describes_the_whole_scene(trace):
-    assert trace["schema"] == "zipline-rl-trace/1"
+    assert trace["schema"] == "subsea-rl-trace/1"
     assert trace["dt"] == pytest.approx(0.1)
-    for key in ("terrain", "launch", "drop_target", "zone_radius", "corridor", "actions"):
+    for key in ("seabed", "launch", "pipeline", "waypoints", "inspect_radius", "survey_box", "actions"):
         assert key in trace, f"missing header field {key}"
 
-    t = trace["terrain"]
+    t = trace["seabed"]
     assert len(t["heights"]) == t["rows"] * t["cols"], "heightfield is not rectangular"
     assert all(0.0 <= h <= 1.0 for h in t["heights"]), "heights are not normalised to 0..1"
     assert t["size_x"] > 0 and t["elevation"] > 0
 
-    assert len(trace["drop_target"]) == 3
+    assert len(trace["waypoints"]) >= 2
+    assert all(len(wp) == 3 for wp in trace["waypoints"]), "waypoints must be xyz"
+    assert all(len(node) == 2 for node in trace["pipeline"]), "pipeline nodes must be xy"
     assert trace["actions"] == [a.name for a in sorted(Action)]
 
 
 def test_every_frame_is_renderable(trace):
     frames = trace["frames"]
     assert len(frames) > 10
+    n_wp = len(trace["waypoints"])
     for f in frames:
-        for body in ("drone", "payload"):
-            assert len(f[body]["p"]) == 3, "position must be xyz"
-            assert len(f[body]["q"]) == 4, "orientation must be a quaternion"
-            assert abs(np.linalg.norm(f[body]["q"]) - 1.0) < 1e-2, "quaternion not unit"
+        assert len(f["rov"]["p"]) == 3, "position must be xyz"
+        assert len(f["rov"]["q"]) == 4, "orientation must be a quaternion"
+        assert abs(np.linalg.norm(f["rov"]["q"]) - 1.0) < 1e-2, "quaternion not unit"
         assert 0 <= f["a"] < len(Action)
         assert 0.0 <= f["bat"] <= 1.0
-        assert 0.0 <= f["cold"] <= 1.0
-        assert isinstance(f["att"], bool)
-        assert len(f["wind"]) == 2
+        assert 0 <= f["wp"] <= n_wp
+        assert len(f["cur"]) == 2
 
 
 def test_time_advances_monotonically(trace):
@@ -66,13 +67,10 @@ def test_time_advances_monotonically(trace):
     assert times[0] == pytest.approx(trace["dt"])
 
 
-def test_payload_stays_attached_until_it_is_released(trace):
-    """`att` must be a single latching transition - the viewer keys the parachute off it."""
-    attached = [f["att"] for f in trace["frames"]]
-    transitions = sum(1 for a, b in zip(attached, attached[1:]) if a != b)
-    assert transitions <= 1, "payload re-attached mid-episode"
-    if not attached[-1]:
-        assert attached[0] is True
+def test_survey_progress_only_advances(trace):
+    """`wp` is the active-station index; it must be monotonic non-decreasing."""
+    wps = [f["wp"] for f in trace["frames"]]
+    assert all(b >= a for a, b in zip(wps, wps[1:])), "survey progress went backwards"
 
 
 def test_summary_reports_the_outcome(trace):
@@ -80,13 +78,11 @@ def test_summary_reports_the_outcome(trace):
     assert s["agent"] == "test"
     assert s["steps"] == len(trace["frames"])
     assert s["outcome"] in {
-        "delivered",
-        "missed_zone",
-        "crash",
-        "loss_of_control",
-        "corridor_breach",
+        "survey_complete",
+        "collision",
+        "capsized",
+        "lost",
         "battery_depleted",
-        "cold_chain_expired",
         "timeout",
-        "flying",
+        "surveying",
     }

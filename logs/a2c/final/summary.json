@@ -4,27 +4,25 @@
     "algo": "A2C",
     "learning_rate": 0.0007,
     "n_steps": 16,
-    "gamma": 0.995,
+    "gamma": 0.95,
     "gae_lambda": 1.0,
-    "ent_coef": 0.05,
+    "ent_coef": 0.01,
     "vf_coef": 0.5,
     "max_grad_norm": 0.5,
     "use_rms_prop": true,
     "normalize_advantage": false,
     "timesteps": 1500000,
-    "mean_return": -101.02,
-    "std_return": 31.49,
-    "success_rate": 0.0,
-    "mean_miss": 44.526,
-    "flight_time": 21.02,
-    "battery_left": 0.523,
-    "convergence_step": 1125000,
-    "wall_time_s": 988.7
+    "mean_return": 241.03,
+    "std_return": 182.65,
+    "success_rate": 0.9667,
+    "mean_miss": 3.637,
+    "flight_time": 36.7,
+    "battery_left": 0.752,
+    "convergence_step": 450000,
+    "wall_time_s": 927.5
   },
   "outcomes": {
-    "cold_chain_expired": 15,
-    "corridor_breach": 10,
-    "crash": 4,
-    "missed_zone": 1
+    "survey_complete": 29,
+    "timeout": 1
   }
 }

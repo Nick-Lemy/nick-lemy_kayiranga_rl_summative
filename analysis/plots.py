@@ -41,9 +41,9 @@ LOG_DIR = ROOT / "logs"
 RESULTS_DIR = LOG_DIR / "results"
 
 #: Reference scores from ``tests/scripted_pilot.py`` and the trivial policies,
-#: measured over 40 held-out episodes. Quoted in the comparison figure so the
+#: measured over the held-out seeds. Quoted in the comparison figure so the
 #: learned curves have something to be better (or worse) than.
-BASELINES = {"random policy": -35.4, "do nothing": -214.7, "hand-written pilot": 142.5}
+BASELINES = {"random policy": -432.8, "do nothing": -144.4, "hand-written pilot": 360.0}
 
 
 # ------------------------------------------------------------------ log loading
@@ -120,7 +120,10 @@ def _smooth(y: np.ndarray, window: int = 3) -> np.ndarray:
 def fig_learning_curves() -> None:
     """Cumulative reward per algorithm, every configuration overlaid."""
     use_report_style()
-    fig, axes = plt.subplots(2, 2, figsize=(9.6, 6.4), sharex=True, sharey=True)
+    # independent y-axes: a couple of A2C/REINFORCE configurations dive to a few
+    # hundred below zero, and a shared scale would flatten every other panel's
+    # spread - which is the very thing this figure exists to show
+    fig, axes = plt.subplots(2, 2, figsize=(9.6, 6.4), sharex=True, sharey=False)
 
     drew = False
     for ax, algo in zip(axes.ravel(), ALGO_ORDER):
@@ -212,9 +215,9 @@ def fig_algorithm_comparison() -> None:
     ax.set_title("Mean episode return", loc="left")
     ax.set_xlabel("environment steps")
     ax.set_ylabel("return on held-out seeds")
-    ax2.set_title("Delivery rate", loc="left")
+    ax2.set_title("Survey completion rate", loc="left")
     ax2.set_xlabel("environment steps")
-    ax2.set_ylabel("% of episodes delivered in the zone")
+    ax2.set_ylabel("% of episodes with the full survey done")
     for a in (ax, ax2):
         tidy(a)
         a.xaxis.set_major_formatter(FuncFormatter(thousands))
@@ -504,7 +507,7 @@ def fig_generalization() -> None:
 
     for a, title, ylab in (
         (ax, "Mean return", "return"),
-        (ax2, "Delivery rate", "% delivered"),
+        (ax2, "Survey completion", "% surveys complete"),
     ):
         a.set_xticks(x, [c.replace("_", "\n") for c in conditions], fontsize=7.5)
         a.set_title(title, loc="left")
@@ -514,7 +517,7 @@ def fig_generalization() -> None:
     ax.legend(loc="upper right", ncol=2)
 
     fig.suptitle(
-        "Generalisation: unseen seeds, unseen terrain, and harder weather",
+        "Generalisation: unseen seeds, rougher seabed, and stronger current",
         x=0.012,
         ha="left",
         fontsize=11,
@@ -576,7 +579,7 @@ def fig_outcomes() -> None:
     ax.grid(axis="y", visible=False)
 
     fig.suptitle(
-        "How episodes ended - a delivery is the only full success",
+        "How episodes ended - a completed survey is the only full success",
         x=0.012,
         ha="left",
         fontsize=11,

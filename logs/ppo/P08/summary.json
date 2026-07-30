@@ -12,20 +12,18 @@
     "ent_coef": 0.01,
     "vf_coef": 0.5,
     "max_grad_norm": 0.5,
-    "timesteps": 300000,
-    "mean_return": 7.95,
-    "std_return": 44.11,
-    "success_rate": 0.0333,
-    "mean_miss": 15.811,
-    "flight_time": 12.01,
-    "battery_left": 0.676,
-    "convergence_step": 311296,
-    "wall_time_s": 212.9
+    "timesteps": 200000,
+    "mean_return": 2.06,
+    "std_return": 149.27,
+    "success_rate": 0.1,
+    "mean_miss": 2.286,
+    "flight_time": 53.64,
+    "battery_left": 0.663,
+    "convergence_step": 120000,
+    "wall_time_s": 213.6
   },
   "outcomes": {
-    "corridor_breach": 4,
-    "delivered": 1,
-    "loss_of_control": 1,
-    "missed_zone": 24
+    "survey_complete": 3,
+    "timeout": 27
   }
 }

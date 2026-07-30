@@ -50,24 +50,20 @@ STATUS = {
 
 #: Terminal states, ordered best to worst, with a status-derived colour.
 OUTCOME_ORDER = [
-    "delivered",
-    "missed_zone",
+    "survey_complete",
     "timeout",
-    "cold_chain_expired",
     "battery_depleted",
-    "corridor_breach",
-    "crash",
-    "loss_of_control",
+    "lost",
+    "collision",
+    "capsized",
 ]
 OUTCOME_COLOR = {
-    "delivered": "#1baf7a",
-    "missed_zone": "#7fcfae",
+    "survey_complete": "#1baf7a",
     "timeout": "#eda100",
-    "cold_chain_expired": "#eb6834",
     "battery_depleted": "#d55181",
-    "corridor_breach": "#9085e9",
-    "crash": "#e34948",
-    "loss_of_control": "#8a2b2b",
+    "lost": "#9085e9",
+    "collision": "#e34948",
+    "capsized": "#8a2b2b",
 }
 
 

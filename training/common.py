@@ -29,7 +29,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnv
 
-from environment.custom_env import EnvConfig, ZiplineDeliveryEnv
+from environment.custom_env import EnvConfig, SubseaInspectionEnv
 
 # The policies are small MLPs and the environments run in their own processes,
 # so torch's intra-op thread pool only fights the env workers for cores. Pinning
@@ -56,11 +56,11 @@ def make_env(
     """Return a thunk building one monitored environment instance."""
 
     def _init() -> Monitor:
-        env = ZiplineDeliveryEnv(config=config, **kwargs)
+        env = SubseaInspectionEnv(config=config, **kwargs)
         env = Monitor(
             env,
             filename=str(monitor_path) if monitor_path else None,
-            info_keywords=("delivered", "outcome"),
+            info_keywords=("success", "outcome"),
         )
         if seed is not None:
             env.reset(seed=seed)
@@ -118,7 +118,7 @@ def evaluate_policy(
     predict: Callable[[np.ndarray], int],
     seeds: Iterable[int] = EVAL_SEEDS,
     config: EnvConfig | None = None,
-    env: ZiplineDeliveryEnv | None = None,
+    env: SubseaInspectionEnv | None = None,
 ) -> EvalResult:
     """Score a policy over a fixed block of seeds.
 
@@ -126,7 +126,7 @@ def evaluate_policy(
     ``lambda o: int(model.predict(o, deterministic=True)[0])``.
     """
     owned = env is None
-    env = env or ZiplineDeliveryEnv(config=config)
+    env = env or SubseaInspectionEnv(config=config)
     returns, misses, times, batteries, outcomes = [], [], [], [], []
     try:
         for seed in seeds:
@@ -139,10 +139,10 @@ def evaluate_policy(
                 done = terminated or truncated
             returns.append(total)
             outcomes.append(info["outcome"])
-            times.append(info["flight_time"])
+            times.append(info["mission_time"])
             batteries.append(info["battery"])
-            if not np.isnan(info["miss_distance"]):
-                misses.append(info["miss_distance"])
+            if not np.isnan(info["inspect_error"]):
+                misses.append(info["inspect_error"])
     finally:
         if owned:
             env.close()
@@ -151,7 +151,7 @@ def evaluate_policy(
     return EvalResult(
         mean_return=float(np.mean(returns)),
         std_return=float(np.std(returns)),
-        success_rate=sum(o == "delivered" for o in outcomes) / n,
+        success_rate=sum(o == "survey_complete" for o in outcomes) / n,
         mean_miss=float(np.mean(misses)) if misses else float("nan"),
         mean_flight_time=float(np.mean(times)),
         mean_battery_left=float(np.mean(batteries)),
@@ -182,11 +182,11 @@ class PeriodicEvalCallback(BaseCallback):
         self.config = config
         self.history: list[dict[str, Any]] = []
         self._next_at = eval_every
-        self._env: ZiplineDeliveryEnv | None = None
+        self._env: SubseaInspectionEnv | None = None
         self._reference_obs: np.ndarray | None = None
 
     def _on_training_start(self) -> None:
-        self._env = ZiplineDeliveryEnv(config=self.config)
+        self._env = SubseaInspectionEnv(config=self.config)
         self._reference_obs = self._collect_reference_obs()
         self._record(0)
 
@@ -233,7 +233,7 @@ class PeriodicEvalCallback(BaseCallback):
         if self.verbose:
             print(
                 f"    [eval] {step:>8,} steps  return {res.mean_return:8.2f}"
-                f"  delivered {100 * res.success_rate:5.1f}%"
+                f"  survey {100 * res.success_rate:5.1f}%"
             )
 
     def _on_step(self) -> bool:
@@ -419,8 +419,8 @@ def run_sb3(
     if verbose:
         print(
             f"  -> {spec.run_id}: return {result.mean_return:8.2f}"
-            f"  delivered {100 * result.success_rate:5.1f}%"
-            f"  miss {result.mean_miss:5.2f} m  ({watch.seconds:.0f}s)"
+            f"  survey {100 * result.success_rate:5.1f}%"
+            f"  scan-off {result.mean_miss:4.2f} m  ({watch.seconds:.0f}s)"
         )
     return row
 
@@ -466,8 +466,8 @@ def run_reinforce(
     if verbose:
         print(
             f"  -> {spec.run_id}: return {result.mean_return:8.2f}"
-            f"  delivered {100 * result.success_rate:5.1f}%"
-            f"  miss {result.mean_miss:5.2f} m  ({watch.seconds:.0f}s)"
+            f"  survey {100 * result.success_rate:5.1f}%"
+            f"  scan-off {result.mean_miss:4.2f} m  ({watch.seconds:.0f}s)"
         )
     return row
 
@@ -542,7 +542,7 @@ def load_agent(algo: str, run_id: str | None = None, env=None):
         path = base.with_suffix(".pt")
         if not path.exists():
             raise FileNotFoundError(path)
-        probe = env or ZiplineDeliveryEnv()
+        probe = env or SubseaInspectionEnv()
         model = REINFORCE.load(path, env=probe)
         if env is None:
             probe.close()

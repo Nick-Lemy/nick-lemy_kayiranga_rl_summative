@@ -37,6 +37,7 @@ Thumbs.db
 # them); rendered MP4s are not - they are reproducible with
 #   uv run main.py video
 assets/*.mp4
+*.mp4
 
 # --- training scratch ------------------------------------------------------
 # Sweep eval histories and results tables ARE committed: they are the evidence

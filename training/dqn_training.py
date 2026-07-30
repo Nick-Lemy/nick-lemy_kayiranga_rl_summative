@@ -1,4 +1,4 @@
-"""DQN sweep for the blood-delivery mission.
+"""DQN sweep for the subsea pipeline-inspection mission.
 
 Ten configurations, each varying hyperparameters that matter for a *value-based*
 method on this problem specifically:
@@ -7,16 +7,16 @@ method on this problem specifically:
     The Q-target moves as the policy improves, so too large a step makes the
     bootstrapped target chase itself.
 ``buffer_size`` / ``learning_starts``
-    Episodes here end in one of seven very different terminal states. A small
-    buffer forgets the rare successful deliveries and the agent regresses to
-    dumping the payload early.
+    Episodes here end in one of several very different terminal states. A small
+    buffer forgets the rare completed surveys and the agent regresses to drifting
+    off the pipe or triggering scans with nothing in range.
 ``exploration_fraction`` / ``exploration_final_eps``
-    Delivery needs a specific action (RELEASE_PAYLOAD) at a specific place. Too
-    little exploration and it is never discovered; too much and the aircraft
-    never survives long enough to reach the zone.
+    A scan only counts if the INSPECT action is fired inside a hoop. Too little
+    exploration and that pairing is never discovered; too much and the vehicle
+    never holds station long enough to reach the next station.
 ``gamma``
-    The delivery bonus arrives ~150 steps after take-off, so the discount has to
-    be long enough to propagate it back to the climb-out.
+    A station scan pays off ~100+ steps after leaving the previous one, so the
+    discount has to be long enough to propagate the reward back along the run.
 ``target_update_interval`` / ``tau``
     Directly controls how stale the bootstrap target is, i.e. stability.
 ``train_freq`` / ``gradient_steps`` / ``batch_size``
@@ -37,7 +37,7 @@ from training.common import RunSpec, print_header, run_sb3
 #: Timesteps per sweep run. Long enough to separate the configurations, short
 #: enough that forty runs fit in a sitting; the best configuration is then
 #: retrained for longer in ``final``.
-SWEEP_STEPS = 300_000
+SWEEP_STEPS = 200_000
 FINAL_STEPS = 1_500_000
 N_ENVS = 4
 

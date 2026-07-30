@@ -81,8 +81,8 @@ TABLE_COLUMNS = {
 RESULT_COLUMNS = [
     ("mean_return", "Return"),
     ("std_return", "± SD"),
-    ("success_rate", "Delivered"),
-    ("mean_miss", "Miss (m)"),
+    ("success_rate", "Surveyed"),
+    ("mean_miss", "Scan off. (m)"),
     ("convergence_step", "Steps to 90%"),
 ]
 
@@ -220,7 +220,7 @@ def summary_table() -> str:
         return '<p class="missing">No results yet.</p>'
     return (
         '<table class="sweep"><thead><tr><th>Algorithm</th><th>Best config</th>'
-        "<th>Return</th><th>Delivered</th><th>Miss (m)</th>"
+        "<th>Return</th><th>Surveyed</th><th>Scan off. (m)</th>"
         "<th>Steps to 90%</th><th>Train time</th></tr></thead>"
         f'<tbody>{"".join(rows)}</tbody></table>'
     )
@@ -295,10 +295,10 @@ def build() -> Path:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     html = f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
-<title>Mission-Based RL — Blood-Delivery UAV</title>
+<title>Mission-Based RL — Subsea Inspection ROV</title>
 <style>{CSS}</style></head><body>
 
-<h1>Optimising a Blood-Delivery UAV with Reinforcement Learning</h1>
+<h1>Optimising a Subsea Inspection ROV with Reinforcement Learning</h1>
 <div class="byline">
   Nick Lemy Kayiranga &nbsp;·&nbsp; n.kayiranga@alustudent.com &nbsp;·&nbsp;
   Mission-Based Reinforcement Learning — Summative &nbsp;·&nbsp; {date.today():%d %B %Y}<br>

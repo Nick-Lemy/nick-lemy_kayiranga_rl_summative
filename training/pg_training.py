@@ -5,11 +5,11 @@ ones that actually bite on this mission:
 
 PPO
     ``n_steps``/``batch_size`` set how much on-policy data backs each update, and
-    a delivery only shows up in the data every ~150 steps. ``clip_range`` and
-    ``n_epochs`` control how far the policy may move on that data before it goes
-    stale. ``gae_lambda`` trades bias against variance on a reward that is
-    dominated by one large terminal bonus. ``ent_coef`` decides whether
-    RELEASE_PAYLOAD keeps getting tried.
+    a completed station only shows up in the data every ~100+ steps. ``clip_range``
+    and ``n_epochs`` control how far the policy may move on that data before it
+    goes stale. ``gae_lambda`` trades bias against variance on a reward that mixes
+    dense progress shaping with sparse station bonuses. ``ent_coef`` decides
+    whether the INSPECT action keeps getting tried at the hoops.
 A2C
     No clipping and a much shorter rollout, so it is far more sensitive to
     ``learning_rate`` and to ``normalize_advantage``; ``use_rms_prop`` and
@@ -31,7 +31,7 @@ from stable_baselines3 import A2C, PPO
 
 from training.common import RunSpec, print_header, run_reinforce, run_sb3
 
-SWEEP_STEPS = 300_000
+SWEEP_STEPS = 200_000
 FINAL_STEPS = 1_500_000
 N_ENVS = 8
 

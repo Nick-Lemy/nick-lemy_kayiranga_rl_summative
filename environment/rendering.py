@@ -1,10 +1,10 @@
-"""Visualisation for the blood-delivery environment.
+"""Visualisation for the subsea inspection environment.
 
 Three ways to look at the same simulation:
 
 ``PassiveViewer``
     MuJoCo's native interactive 3D window. Used for the live demo - you can
-    orbit, zoom and pause while the policy flies.
+    orbit, zoom and pause while the policy flies the vehicle.
 ``OffscreenRenderer``
     Headless RGB frames with a telemetry HUD burned in, for recording MP4s and
     for the still that goes in the report.
@@ -12,8 +12,8 @@ Three ways to look at the same simulation:
     Convenience wrapper that rolls out one episode and writes an MP4.
 
 Both renderers have to re-upload the heightfield to the GPU whenever the
-environment regenerates the terrain, otherwise the aircraft flies over hills
-that are no longer the ones the physics is using.
+environment regenerates the seabed, otherwise the vehicle moves over relief
+that is no longer the one the physics is using.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ import mujoco
 import numpy as np
 
 if TYPE_CHECKING:  # pragma: no cover
-    from environment.custom_env import ZiplineDeliveryEnv
+    from environment.custom_env import SubseaInspectionEnv
 
 # HUD colours (R, G, B)
 _WHITE = (245, 247, 250)
@@ -38,41 +38,39 @@ _BAD = (255, 95, 95)
 _ACCENT = (120, 190, 255)
 
 
-def _chase_camera(env: "ZiplineDeliveryEnv", cam: mujoco.MjvCamera, mode: str = "chase") -> None:
-    """Point a free camera at the aircraft.
+def _chase_camera(env: "SubseaInspectionEnv", cam: mujoco.MjvCamera, mode: str = "chase") -> None:
+    """Point a free camera at the vehicle.
 
-    ``chase`` trails the aircraft along its heading, which is what reads best on
-    video; ``mission`` pulls back to frame the whole corridor so the depot, the
-    ridge and the health post are visible at once.
+    ``chase`` trails the ROV along its heading, which is what reads best on
+    video; ``mission`` pulls back to frame the whole pipeline so the launch buoy,
+    the survey line and the manifold are visible at once; ``station`` frames the
+    active inspection hoop the vehicle is closing on.
     """
-    pos = env._drone_pos()
+    pos = env._rov_pos()
     if mode == "mission":
-        mid = 0.5 * (np.array([env.launch_xy[0], env.launch_xy[1], 0.0]) + env.drop_target)
-        cam.lookat[:] = mid + np.array([0.0, 0.0, 6.0])
-        cam.distance = 64.0
+        cam.lookat[:] = np.array([0.0, 0.0, 2.0])
+        cam.distance = 72.0
         cam.azimuth = 74.0
-        cam.elevation = -21.0
+        cam.elevation = -26.0
         return
 
-    if mode == "payload":
-        # Frames the falling pack with the drop zone beneath it. The lookat sits
-        # on the payload rather than midway to the target, and the standoff is
-        # generous: aiming at the midpoint parks the camera inside the
-        # translucent drop-zone column and the shot fills with green.
-        cam.lookat[:] = env._payload_pos()
-        cam.distance = 15.0
+    if mode == "station":
+        # Frames the vehicle with the station it is inspecting, from slightly
+        # above so the seabed and the hoop both stay in shot.
+        cam.lookat[:] = 0.5 * (pos + env._active_target())
+        cam.distance = 12.0
         cam.azimuth = 58.0
-        cam.elevation = -16.0
+        cam.elevation = -18.0
         return
 
     # MuJoCo's azimuth is the direction the camera *looks along*, so trailing the
-    # aircraft means matching its yaw, not opposing it.
-    mat = env.data.xmat[env._bid_drone].reshape(3, 3)
+    # vehicle means matching its yaw, not opposing it.
+    mat = env.data.xmat[env._bid_rov].reshape(3, 3)
     yaw = math.atan2(mat[1, 0], mat[0, 0])
     cam.lookat[:] = pos
-    cam.distance = 7.0
+    cam.distance = 6.5
     cam.azimuth = math.degrees(yaw)
-    cam.elevation = -14.0
+    cam.elevation = -12.0
 
 
 class PassiveViewer:
@@ -81,14 +79,14 @@ class PassiveViewer:
     ``launch_passive`` does not pace anything - it just draws whatever is in
     ``MjData`` when you call ``sync``. Driving the loop from python therefore
     replays the flight as fast as the CPU can integrate it, which here is on the
-    order of a hundred times real time and looks like the aircraft teleporting.
+    order of a hundred times real time and looks like the vehicle teleporting.
     This wrapper sleeps the difference so one second of simulated flight takes
     one second of wall clock, at ``speed`` times normal.
     """
 
     def __init__(
         self,
-        env: "ZiplineDeliveryEnv",
+        env: "SubseaInspectionEnv",
         camera: str = "chase",
         realtime: bool = True,
         speed: float = 1.0,
@@ -159,7 +157,7 @@ class OffscreenRenderer:
 
     def __init__(
         self,
-        env: "ZiplineDeliveryEnv",
+        env: "SubseaInspectionEnv",
         width: int = 1280,
         height: int = 720,
         camera: str = "chase",
@@ -218,28 +216,29 @@ class OffscreenRenderer:
         )
         x, y = pad + int(w * 0.014), pad + int(line * 0.35)
 
-        draw.text((x, y), "BLOOD DELIVERY UAV", font=self._font, fill=_ACCENT)
+        draw.text((x, y), "SUBSEA INSPECTION ROV", font=self._font, fill=_ACCENT)
         y += line
         draw.text(
             (x, y),
-            f"t {info['flight_time']:5.1f} s     range {info['range_to_zone']:5.1f} m",
+            f"t {info['mission_time']:5.1f} s     range {info['range_to_wp']:5.1f} m",
             font=self._font_small,
             fill=_WHITE,
         )
         y += int(line * 0.85)
         draw.text(
             (x, y),
-            f"alt {info['altitude_agl']:5.1f} m AGL   "
-            f"{'PAYLOAD' if info['attached'] else 'RELEASED'}",
+            f"depth {info['altitude_agl']:4.1f} m AB   "
+            f"station {info['waypoints_done']}/{info['waypoints_total']}"
+            f"   set {info['current_speed']:.2f} m/s",
             font=self._font_small,
-            fill=_WHITE if info["attached"] else _GOOD,
+            fill=_WHITE,
         )
         y += int(line * 1.0)
 
         bar_w = panel_w - int(w * 0.028) - int(w * 0.075)
         self._bar(draw, x, y, bar_w, int(line * 0.42), info["battery"], "BATTERY")
         y += int(line * 1.05)
-        self._bar(draw, x, y, bar_w, int(line * 0.42), info["cold_chain"], "COLD CHAIN")
+        self._bar(draw, x, y, bar_w, int(line * 0.42), info["survey_progress"], "SURVEY")
         y += int(line * 1.15)
 
         draw.text(
@@ -266,11 +265,11 @@ class OffscreenRenderer:
         )
 
         # ---- outcome banner -------------------------------------------------
-        if info["outcome"] not in ("flying",):
-            good = info["outcome"] == "delivered"
+        if info["outcome"] not in ("surveying",):
+            good = info["outcome"] == "survey_complete"
             txt = info["outcome"].replace("_", " ").upper()
-            if good and not math.isnan(info["miss_distance"]):
-                txt += f"   miss {info['miss_distance']:.2f} m"
+            if good and not math.isnan(info["inspect_error"]):
+                txt += f"   scan offset {info['inspect_error']:.2f} m"
             tw = draw.textlength(txt, font=self._font)
             bx = (w - tw) / 2
             draw.rounded_rectangle(
@@ -332,7 +331,7 @@ def _load_font(size: int):
 
 
 def record_video(
-    env: "ZiplineDeliveryEnv",
+    env: "SubseaInspectionEnv",
     policy,
     path: str | Path,
     max_steps: int | None = None,

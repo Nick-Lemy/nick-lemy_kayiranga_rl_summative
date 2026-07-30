@@ -4,9 +4,9 @@
 
 Prints a step-by-step telemetry trace plus a per-episode summary, so the
 terminal shows *why* the agent scored what it scored - which action it chose,
-how much battery and cold-chain time it had left, and how the episode ended.
-``--render`` opens the interactive 3D viewer alongside the trace, which is the
-combination used in the demonstration video.
+how much battery it had left, how many stations it had inspected, and how the
+episode ended. ``--render`` opens the interactive 3D viewer alongside the trace,
+which is the combination used in the demonstration video.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ if str(ROOT) not in sys.path:
 
 import numpy as np  # noqa: E402
 
-from environment.custom_env import ZiplineDeliveryEnv  # noqa: E402
+from environment.custom_env import SubseaInspectionEnv  # noqa: E402
 
 # terminal colours, so successes and failures are distinguishable on video
 _GREEN, _RED, _YELLOW, _CYAN, _DIM, _RESET = (
@@ -35,7 +35,7 @@ _GREEN, _RED, _YELLOW, _CYAN, _DIM, _RESET = (
     "\033[0m",
 )
 
-_GOOD_OUTCOMES = {"delivered"}
+_GOOD_OUTCOMES = {"survey_complete"}
 
 
 def _resolve_agent(algo: str | None):
@@ -58,7 +58,7 @@ def run(args) -> None:
         print("  Train one with:  uv run main.py train --algo ppo --final\n")
 
     render = getattr(args, "render", False)
-    env = ZiplineDeliveryEnv(
+    env = SubseaInspectionEnv(
         render_mode="human" if render else None,
         playback_speed=getattr(args, "speed", 1.0),
     )
@@ -74,8 +74,8 @@ def run(args) -> None:
 
             print(f"{_DIM}  --- episode {episode + 1}/{args.episodes}"
                   f"  (seed {seed if seed is not None else 'random'})"
-                  f"  drop zone at ({env.post_xy[0]:.1f}, {env.post_xy[1]:.1f})"
-                  f"  wind {np.linalg.norm(env.wind_mean):.1f} m/s ---{_RESET}")
+                  f"  {env._info()['waypoints_total']} stations to inspect"
+                  f"  current {np.linalg.norm(env.current_mean):.2f} m/s ---{_RESET}")
 
             while not done:
                 action = fallback(env) if fallback is not None else predict(obs)
@@ -87,12 +87,12 @@ def run(args) -> None:
 
                 if step % 5 == 0:
                     print(
-                        f"    t={info['flight_time']:5.1f}s"
+                        f"    t={info['mission_time']:5.1f}s"
                         f"  {info['action']:<15}"
-                        f"  range {info['range_to_zone']:6.2f} m"
-                        f"  alt {info['altitude_agl']:5.1f} m"
+                        f"  range {info['range_to_wp']:6.2f} m"
+                        f"  depth {info['altitude_agl']:5.1f} m"
                         f"  bat {info['battery']:.2f}"
-                        f"  cold {info['cold_chain']:.2f}"
+                        f"  stn {info['waypoints_done']}/{info['waypoints_total']}"
                         f"  R {total:8.2f}"
                     )
                 if env._viewer is not None and not env._viewer.running:
@@ -100,12 +100,12 @@ def run(args) -> None:
 
             good = info["outcome"] in _GOOD_OUTCOMES
             colour = _GREEN if good else _RED
-            miss = info["miss_distance"]
+            miss = info["inspect_error"]
             print(
                 f"  {colour}=> {info['outcome'].upper()}{_RESET}"
-                + (f"   miss {miss:.2f} m" if not math.isnan(miss) else "")
+                + (f"   scan offset {miss:.2f} m" if not math.isnan(miss) else "")
                 + f"   return {total:8.2f}"
-                f"   flight {info['flight_time']:.1f} s"
+                f"   time {info['mission_time']:.1f} s"
                 f"   battery left {100 * info['battery']:.0f}%"
             )
             top = ", ".join(f"{a} x{n}" for a, n in action_counts.most_common(4))
@@ -123,19 +123,19 @@ def run(args) -> None:
 
     if not returns:
         return
-    delivered = sum(o in _GOOD_OUTCOMES for o in outcomes)
+    completed = sum(o in _GOOD_OUTCOMES for o in outcomes)
     print(f"{_CYAN}{'=' * 74}")
     print(f" SUMMARY over {len(returns)} episodes - {label}")
     print(f"{'=' * 74}{_RESET}")
     print(f"  mean return       {np.mean(returns):8.2f}  (std {np.std(returns):.2f})")
-    print(f"  delivery rate     {100 * delivered / len(returns):7.1f} %")
+    print(f"  survey complete   {100 * completed / len(returns):7.1f} %")
     if misses:
-        print(f"  mean miss         {np.mean(misses):8.2f} m")
+        print(f"  mean scan offset  {np.mean(misses):8.2f} m")
     print(f"  outcomes          {dict(Counter(outcomes))}")
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Run a trained blood-delivery agent.")
+    p = argparse.ArgumentParser(description="Run a trained subsea-inspection ROV agent.")
     p.add_argument("--algo", choices=["dqn", "ppo", "a2c", "reinforce"], default=None,
                    help="which trained policy to fly (default: best available)")
     p.add_argument("--episodes", type=int, default=5)

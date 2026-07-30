@@ -1,0 +1,204 @@
+<!--
+  Autonomous underwater vehicle (AUV/ROV) on a subsea pipeline-inspection run.
+
+  The scene is deliberately physical rather than abstract:
+
+    * the seabed is a 96x96 heightfield whose elevation buffer is regenerated
+      procedurally on every reset, so the vehicle never surveys the same ridges
+      twice (domain randomisation -> supports the generalisation test),
+
+    * the vehicle is a genuine free rigid body. Its discrete actions move the
+      setpoints of an onboard velocity/heading controller; that controller,
+      buoyancy, quadratic hydrodynamic drag and a drifting current field are all
+      summed into the body's external-force slot, so surging, crabbing, holding
+      station and colliding all emerge from rigid-body integration rather than
+      from scripted kinematics,
+
+    * a fixed pipeline snakes across the seabed in a shallow S. Four inspection
+      stations sit on it; the vehicle has to reach each one in order, hold
+      station against the current and trigger a scan.
+
+  There are no MuJoCo actuators: underwater a thruster is just a force, so every
+  force (control, buoyancy, drag, current) is written straight into the body's
+  xfrc_applied slot from python. Distances are compressed so a full survey fits
+  in a ~40 s episode, but the buoyancy, drag and thrust magnitudes are kept in a
+  realistic small-ROV range.
+
+  Coordinate conventions: world is z-up. Body x is forward, y is port (left),
+  z is up. The observation is expressed in the yaw-aligned frame, so "forward"
+  always means the same thing to the policy regardless of heading.
+-->
+<mujoco model="subsea_pipeline_inspection">
+
+  <compiler angle="radian" autolimits="true"/>
+
+  <!-- density/viscosity are ZERO: all hydrodynamics (buoyancy, drag, current)
+       are applied from python through xfrc_applied, so the physics stays under
+       the environment's control and matches what the reward and observation see -->
+  <option timestep="0.01" gravity="0 0 -9.81" density="0" viscosity="0"
+          integrator="implicitfast"/>
+
+  <visual>
+    <!-- dim, blue-green ambient: the deep-water look -->
+    <headlight ambient="0.28 0.34 0.38" diffuse="0.40 0.50 0.55" specular="0.10 0.12 0.14"/>
+    <rgba haze="0.10 0.26 0.34 1"/>
+    <global azimuth="140" elevation="-18" offwidth="1280" offheight="720"/>
+    <quality shadowsize="4096" offsamples="8"/>
+    <!-- aggressive fog so far geometry fades into the water, znear tight -->
+    <map znear="0.05" zfar="60" haze="0.62"/>
+  </visual>
+
+  <asset>
+    <!-- water column above, darkening with depth -->
+    <texture type="skybox" builtin="gradient" rgb1="0.02 0.10 0.16" rgb2="0.06 0.24 0.32"
+             width="512" height="512"/>
+
+    <texture name="sand" type="2d" builtin="checker" mark="edge"
+             rgb1="0.16 0.20 0.19" rgb2="0.22 0.27 0.25" markrgb="0.12 0.15 0.14"
+             width="512" height="512"/>
+    <material name="seabed_mat" texture="sand" texrepeat="16 16" texuniform="true"
+              specular="0.02" shininess="0.02" reflectance="0.0"/>
+
+    <material name="pipe_mat"    rgba="0.62 0.58 0.36 1" specular="0.35" shininess="0.35"/>
+    <material name="pipe_rust"   rgba="0.45 0.30 0.20 1" specular="0.2"/>
+    <material name="wp_mat"      rgba="0.10 0.82 0.62 0.32"/>
+    <material name="wp_ring_mat" rgba="0.10 0.90 0.70 0.95"/>
+    <material name="station_mat" rgba="0.80 0.82 0.85 1" specular="0.4" shininess="0.5"/>
+    <material name="station_dk"  rgba="0.20 0.24 0.28 1" specular="0.4"/>
+    <material name="hull_mat"    rgba="0.96 0.74 0.12 1" specular="0.5" shininess="0.6"/>
+    <material name="hull_dk"     rgba="0.12 0.13 0.16 1" specular="0.4" shininess="0.5"/>
+    <material name="prop_mat"    rgba="0.20 0.22 0.26 0.75"/>
+    <material name="glass_mat"   rgba="0.55 0.85 0.95 0.55" specular="0.7" shininess="0.8"/>
+    <material name="surface_mat" rgba="0.20 0.45 0.55 0.16" specular="0.6"/>
+    <material name="beacon_mat"  rgba="0.20 0.80 0.95 0.35"/>
+
+    <!-- elevation buffer is overwritten from python on every reset -->
+    <hfield name="seabed" nrow="96" ncol="96" size="40 22 6 0.6"/>
+  </asset>
+
+  <default>
+    <geom contype="1" conaffinity="1" condim="3" friction="0.8 0.02 0.001"/>
+    <default class="hull">
+      <geom material="hull_mat" density="120"/>
+    </default>
+    <!-- propellers are visual; thrust is applied through xfrc_applied -->
+    <default class="prop">
+      <geom type="cylinder" material="prop_mat" contype="0" conaffinity="0" mass="0.004"/>
+    </default>
+    <default class="scenery">
+      <geom contype="1" conaffinity="1"/>
+    </default>
+    <default class="decor">
+      <geom contype="0" conaffinity="0" mass="0"/>
+    </default>
+  </default>
+
+  <worldbody>
+
+    <!-- shafts of down-welling light -->
+    <light name="sun" pos="-6 -8 26" dir="0.2 0.3 -1" directional="true"
+           diffuse="0.35 0.45 0.5" specular="0.08 0.1 0.12" castshadow="true"/>
+
+    <!-- ============================== seabed ============================== -->
+    <geom name="seabed" type="hfield" hfield="seabed" material="seabed_mat"
+          pos="0 0 0" class="scenery" friction="1.0 0.05 0.002"/>
+
+    <!-- water surface, a translucent ceiling well above the survey depth -->
+    <geom name="water_surface" type="box" size="40 22 0.02" pos="0 0 12"
+          material="surface_mat" class="decor"/>
+
+    <!-- ============================= pipeline =============================
+         A shallow S across the seabed. The eight node coordinates are mirrored
+         exactly by PIPE_NODES in custom_env.py, which is what the corridor
+         reward and the channel-carving use, so the geometry and the physics can
+         never drift apart. Pipe axis sits at z=0.4 on the flattened channel.   -->
+    <body name="pipeline" pos="0 0 0">
+      <geom name="pipe_1" type="capsule" fromto="-28 0 0.4  -20 4 0.4" size="0.38" material="pipe_mat" class="scenery"/>
+      <geom name="pipe_2" type="capsule" fromto="-20 4 0.4  -12 5 0.4" size="0.38" material="pipe_mat" class="scenery"/>
+      <geom name="pipe_3" type="capsule" fromto="-12 5 0.4   -4 2 0.4" size="0.38" material="pipe_mat" class="scenery"/>
+      <geom name="pipe_4" type="capsule" fromto=" -4 2 0.4    4 -2 0.4" size="0.38" material="pipe_mat" class="scenery"/>
+      <geom name="pipe_5" type="capsule" fromto="  4 -2 0.4  12 -5 0.4" size="0.38" material="pipe_mat" class="scenery"/>
+      <geom name="pipe_6" type="capsule" fromto=" 12 -5 0.4  20 -4 0.4" size="0.38" material="pipe_mat" class="scenery"/>
+      <geom name="pipe_7" type="capsule" fromto=" 20 -4 0.4  28 0 0.4" size="0.38" material="pipe_mat" class="scenery"/>
+      <!-- support saddles, purely decorative -->
+      <geom name="sad_1" type="box" size="0.5 0.5 0.2" pos="-20 4 0.2" material="pipe_rust" class="decor"/>
+      <geom name="sad_2" type="box" size="0.5 0.5 0.2" pos="-4 2 0.2"  material="pipe_rust" class="decor"/>
+      <geom name="sad_3" type="box" size="0.5 0.5 0.2" pos="12 -5 0.2" material="pipe_rust" class="decor"/>
+    </body>
+
+    <!-- ====================== inspection waypoints ========================
+         Translucent hoops the vehicle must reach in order. Positions mirror
+         WAYPOINTS in custom_env.py. Drawn as decor so they never collide.      -->
+    <body name="waypoints" pos="0 0 0">
+      <geom name="wp0_ring" type="cylinder" size="2.4 0.05" pos="-20 4 0.9"
+            euler="1.5708 0 0" material="wp_ring_mat" class="decor"/>
+      <geom name="wp0_glow" type="sphere" size="0.5" pos="-20 4 0.9" material="beacon_mat" class="decor"/>
+      <geom name="wp1_ring" type="cylinder" size="2.4 0.05" pos="-4 2 0.9"
+            euler="1.5708 0 0" material="wp_ring_mat" class="decor"/>
+      <geom name="wp1_glow" type="sphere" size="0.5" pos="-4 2 0.9" material="beacon_mat" class="decor"/>
+      <geom name="wp2_ring" type="cylinder" size="2.4 0.05" pos="12 -5 0.9"
+            euler="1.5708 0 0" material="wp_ring_mat" class="decor"/>
+      <geom name="wp2_glow" type="sphere" size="0.5" pos="12 -5 0.9" material="beacon_mat" class="decor"/>
+    </body>
+
+    <!-- =========================== end station ===========================
+         The riser/manifold at the far end of the line; the fourth and final
+         inspection target sits here at (28, 0).                                 -->
+    <body name="end_station" pos="28 0 0">
+      <geom name="stn_base" type="box" size="2.2 2.2 0.3" pos="0 0 0.3" material="station_dk" class="scenery"/>
+      <geom name="stn_riser" type="cylinder" size="0.5 3.0" pos="0 0 3.0" material="station_mat" class="scenery"/>
+      <geom name="stn_flange" type="cylinder" size="1.1 0.25" pos="0 0 1.2" material="station_dk" class="decor"/>
+      <geom name="stn_wp_ring" type="cylinder" size="2.4 0.05" pos="0 0 1.5"
+            euler="1.5708 0 0" material="wp_ring_mat" class="decor"/>
+      <geom name="stn_beacon" type="sphere" size="0.35" pos="0 0 6.1" material="beacon_mat" class="decor"/>
+      <site name="station_site" pos="0 0 1.5" size="0.2" rgba="0.2 0.9 0.7 1"/>
+    </body>
+
+    <!-- ============================== ROV ================================
+         A small work-class ROV: ellipsoid buoyancy hull, a sensor pod with a
+         camera dome, four visual thruster shrouds. One free joint; near-neutral
+         buoyancy is supplied from python.                                       -->
+    <body name="rov" pos="-28 0 1.2">
+      <freejoint name="rov_free"/>
+      <inertial pos="0 0 0" mass="11.0" diaginertia="0.32 0.45 0.45"/>
+
+      <camera name="chase" pos="-4.2 0 1.3" xyaxes="0 -1 0 0.28 0 0.96" mode="trackcom"/>
+      <camera name="onboard" pos="0.55 0 -0.02" xyaxes="0 -1 0 0.20 0 -0.98"/>
+
+      <!-- buoyancy hull + faired tail -->
+      <geom name="hull" type="ellipsoid" size="0.55 0.30 0.26" class="hull"/>
+      <geom name="tail" type="ellipsoid" size="0.22 0.14 0.12" pos="-0.62 0 0.02" class="hull"/>
+      <!-- sensor pod slung underneath, with a glass camera dome facing forward -->
+      <geom name="pod" type="box" size="0.20 0.16 0.09" pos="0.10 0 -0.30" material="hull_dk"/>
+      <geom name="dome" type="sphere" size="0.11" pos="0.30 0 -0.30" material="glass_mat" class="decor"/>
+      <geom name="skid_l" type="capsule" fromto="-0.3 0.24 -0.34  0.3 0.24 -0.34" size="0.03" material="hull_dk"/>
+      <geom name="skid_r" type="capsule" fromto="-0.3 -0.24 -0.34  0.3 -0.24 -0.34" size="0.03" material="hull_dk"/>
+
+      <!-- four thruster shrouds (visual only) -->
+      <geom name="shroud_1" type="cylinder" size="0.11 0.06" pos=" 0.34  0.34 0.02" euler="0 1.5708 0" material="hull_dk"/>
+      <geom name="shroud_2" type="cylinder" size="0.11 0.06" pos="-0.40  0.34 0.02" euler="0 1.5708 0" material="hull_dk"/>
+      <geom name="shroud_3" type="cylinder" size="0.11 0.06" pos="-0.40 -0.34 0.02" euler="0 1.5708 0" material="hull_dk"/>
+      <geom name="shroud_4" type="cylinder" size="0.11 0.06" pos=" 0.34 -0.34 0.02" euler="0 1.5708 0" material="hull_dk"/>
+      <geom name="prop_1" size="0.085 0.006" pos=" 0.41  0.34 0.02" euler="0 1.5708 0" class="prop"/>
+      <geom name="prop_2" size="0.085 0.006" pos="-0.47  0.34 0.02" euler="0 1.5708 0" class="prop"/>
+      <geom name="prop_3" size="0.085 0.006" pos="-0.47 -0.34 0.02" euler="0 1.5708 0" class="prop"/>
+      <geom name="prop_4" size="0.085 0.006" pos=" 0.41 -0.34 0.02" euler="0 1.5708 0" class="prop"/>
+      <!-- vertical thrusters -->
+      <geom name="vthr_l" type="cylinder" size="0.09 0.05" pos="0 0.30 0.10" material="hull_dk"/>
+      <geom name="vthr_r" type="cylinder" size="0.09 0.05" pos="0 -0.30 0.10" material="hull_dk"/>
+
+      <site name="imu" pos="0 0 0" size="0.01" rgba="0 0 0 0"/>
+      <site name="sensor" pos="0.30 0 -0.30" size="0.02" rgba="0.2 0.9 0.7 0"/>
+    </body>
+
+  </worldbody>
+
+  <sensor>
+    <framepos      name="s_pos"  objtype="site" objname="imu"/>
+    <framequat     name="s_quat" objtype="site" objname="imu"/>
+    <velocimeter   name="s_vel"  site="imu"/>
+    <gyro          name="s_gyro" site="imu"/>
+    <accelerometer name="s_acc"  site="imu"/>
+  </sensor>
+
+</mujoco>
