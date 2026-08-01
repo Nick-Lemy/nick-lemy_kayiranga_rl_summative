@@ -1,21 +1,19 @@
-"""Build the report as a self-contained, print-ready HTML document.
+"""Build the report as a print-ready HTML document that matches the ALU template.
 
     uv run python -m analysis.report      # writes report/report.html
 
-Open it in a browser and print to PDF. Every table and every number is read
-back out of ``logs/`` at build time, so the report cannot drift away from the
-runs that produced it; figures are inlined as base64 so the file travels as one
-document.
+Open it in a browser and print to PDF (A4). The layout copies the assignment
+report template: the grey ALU header block on every page, Times New Roman body
+text, and plain bordered tables. Every number is read back out of ``logs/`` at
+build time, and the figures are inlined as base64, so the file is one document.
 
-The prose that interprets the results lives in ``analysis/report_text.py``, next
-to the numbers it describes.
+The words that interpret the results live in ``analysis/report_text.py``.
 """
 
 from __future__ import annotations
 
 import base64
 import csv
-from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -25,66 +23,8 @@ FIG_DIR = ROOT / "assets" / "figures"
 RESULTS = ROOT / "logs" / "results"
 OUT_DIR = ROOT / "report"
 
-#: Columns to show per algorithm, in order: the hyperparameters that were varied
-#: plus the outcome columns. Anything held constant across all ten runs is left
-#: out of the table and stated in the caption instead.
-TABLE_COLUMNS = {
-    "DQN": [
-        ("run_id", "Run"),
-        ("learning_rate", "LR"),
-        ("gamma", "γ"),
-        ("buffer_size", "Buffer"),
-        ("batch_size", "Batch"),
-        ("exploration_fraction", "ε-frac"),
-        ("exploration_final_eps", "ε-final"),
-        ("target_update_interval", "Target"),
-        ("tau", "τ"),
-        ("net_arch", "Net"),
-    ],
-    "PPO": [
-        ("run_id", "Run"),
-        ("learning_rate", "LR"),
-        ("gamma", "γ"),
-        ("n_steps", "n_steps"),
-        ("batch_size", "Batch"),
-        ("n_epochs", "Epochs"),
-        ("clip_range", "Clip"),
-        ("gae_lambda", "λ"),
-        ("ent_coef", "Entropy"),
-        ("net_arch", "Net"),
-    ],
-    "A2C": [
-        ("run_id", "Run"),
-        ("learning_rate", "LR"),
-        ("gamma", "γ"),
-        ("n_steps", "n_steps"),
-        ("gae_lambda", "λ"),
-        ("ent_coef", "Entropy"),
-        ("vf_coef", "VF"),
-        ("use_rms_prop", "RMSProp"),
-        ("normalize_advantage", "Norm adv"),
-        ("net_arch", "Net"),
-    ],
-    "REINFORCE": [
-        ("run_id", "Run"),
-        ("learning_rate", "LR"),
-        ("gamma", "γ"),
-        ("episodes_per_update", "Eps/update"),
-        ("use_baseline", "Baseline"),
-        ("normalize_returns", "Norm ret"),
-        ("ent_coef", "Entropy"),
-        ("max_grad_norm", "Grad clip"),
-        ("net_arch", "Net"),
-    ],
-}
 
-RESULT_COLUMNS = [
-    ("mean_return", "Return"),
-    ("std_return", "± SD"),
-    ("success_rate", "Surveyed"),
-    ("mean_miss", "Scan off. (m)"),
-    ("convergence_step", "Steps to 90%"),
-]
+# --------------------------------------------------------------- cell helpers
 
 
 def read_csv(path: Path) -> list[dict[str, str]]:
@@ -94,61 +34,191 @@ def read_csv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(fh))
 
 
-def fmt(key: str, value: str) -> str:
-    """Render one cell: compact numbers, human-readable flags."""
-    if value in ("", None):
-        return "—"
-    if key == "success_rate":
-        try:
-            return f"{100 * float(value):.0f}%"
-        except ValueError:
-            return value
-    if key == "convergence_step":
-        try:
-            v = float(value)
-            return "—" if not np.isfinite(v) else f"{v / 1000:.0f}k"
-        except ValueError:
-            return value
-    if key in ("use_baseline", "normalize_returns", "use_rms_prop", "normalize_advantage"):
-        return "yes" if str(value).lower() in ("true", "1", "yes") else "no"
+def _f(value: str, default=float("nan")) -> float:
     try:
-        v = float(value)
-    except ValueError:
-        return str(value)
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def num(value: str) -> str:
+    """Compact number for a table cell."""
+    v = _f(value)
+    if not np.isfinite(v):
+        return str(value) if value not in ("", None) else ""
     if v.is_integer() and abs(v) >= 1000:
-        return f"{v / 1000:.0f}k" if abs(v) >= 10_000 else f"{int(v):,}"
+        return f"{v / 1000:.0f}k"
     if v.is_integer():
         return str(int(v))
     if abs(v) < 0.001:
-        return f"{v:.0e}"
-    if abs(v) < 1:
-        return f"{v:g}"
-    return f"{v:.2f}"
+        return f"{v:.0e}".replace("e-0", "e-")
+    return f"{v:g}"
+
+
+def lr(value: str) -> str:
+    v = _f(value)
+    if not np.isfinite(v):
+        return str(value)
+    return f"{v:.0e}".replace("e-0", "e-")
+
+
+def yesno(value: str) -> str:
+    return "yes" if str(value).lower() in ("true", "1", "yes") else "no"
+
+
+def reward(value: str) -> str:
+    v = _f(value)
+    return "" if not np.isfinite(v) else f"{v:.0f}"
+
+
+def survey(value: str) -> str:
+    v = _f(value)
+    return "" if not np.isfinite(v) else f"{100 * v:.0f}%"
+
+
+def exploration(r: dict) -> str:
+    final = num(r.get("exploration_final_eps", ""))
+    frac = _f(r.get("exploration_fraction", ""))
+    frac_s = f"{100 * frac:.0f}%" if np.isfinite(frac) else "?"
+    return f"1.0 to {final}, over {frac_s}"
+
+
+#: Per-algorithm table layout: (column label, cell getter). A getter is either a
+#: CSV key with an optional formatter, or a function of the whole row. The last
+#: two columns are the measured outcome. Columns follow the template's named
+#: fields for DQN and add the varied parameters for the others.
+TABLES = {
+    "DQN": [
+        ("Learning Rate", ("learning_rate", lr)),
+        ("Gamma", ("gamma", num)),
+        ("Replay Buffer Size", ("buffer_size", num)),
+        ("Batch Size", ("batch_size", num)),
+        ("Exploration Strategy", exploration),
+        ("Mean Reward", ("mean_return", reward)),
+        ("Survey %", ("success_rate", survey)),
+    ],
+    "REINFORCE": [
+        ("Learning Rate", ("learning_rate", lr)),
+        ("Gamma", ("gamma", num)),
+        ("Episodes / Update", ("episodes_per_update", num)),
+        ("Baseline", ("use_baseline", yesno)),
+        ("Normalize Returns", ("normalize_returns", yesno)),
+        ("Entropy Coef", ("ent_coef", num)),
+        ("Mean Reward", ("mean_return", reward)),
+        ("Survey %", ("success_rate", survey)),
+    ],
+    "PPO": [
+        ("Learning Rate", ("learning_rate", lr)),
+        ("Gamma", ("gamma", num)),
+        ("Rollout (n_steps)", ("n_steps", num)),
+        ("Batch Size", ("batch_size", num)),
+        ("Clip Range", ("clip_range", num)),
+        ("Entropy Coef", ("ent_coef", num)),
+        ("Mean Reward", ("mean_return", reward)),
+        ("Survey %", ("success_rate", survey)),
+    ],
+    "A2C": [
+        ("Learning Rate", ("learning_rate", lr)),
+        ("Gamma", ("gamma", num)),
+        ("Rollout (n_steps)", ("n_steps", num)),
+        ("GAE Lambda", ("gae_lambda", num)),
+        ("Entropy Coef", ("ent_coef", num)),
+        ("Normalize Adv.", ("normalize_advantage", yesno)),
+        ("Mean Reward", ("mean_return", reward)),
+        ("Survey %", ("success_rate", survey)),
+    ],
+}
+
+
+def _cell(getter, row: dict) -> str:
+    if callable(getter):
+        return getter(row)
+    key, fmt = getter
+    return fmt(row.get(key, ""))
 
 
 def sweep_table(algo: str) -> str:
     rows = [r for r in read_csv(RESULTS / f"{algo.lower()}_sweep.csv") if r.get("run_id") != "final"]
     if not rows:
-        return f'<p class="missing">No {algo} sweep results found — run the sweep first.</p>'
+        return f'<p class="missing">No {algo} results yet. Run the sweep first.</p>'
     rows.sort(key=lambda r: r["run_id"])
+    best = max(rows, key=lambda r: _f(r.get("mean_return", "-inf")))
+    cols = TABLES[algo]
 
-    best = max(rows, key=lambda r: float(r.get("mean_return", "-inf")))
-    cols = TABLE_COLUMNS[algo]
-
-    head = "".join(f"<th>{label}</th>" for _, label in cols)
-    head += "".join(f'<th class="res">{label}</th>' for _, label in RESULT_COLUMNS)
-
+    head = "".join(f"<th>{label}</th>" for label, _ in cols)
     body = []
     for r in rows:
         cls = ' class="best"' if r["run_id"] == best["run_id"] else ""
-        cells = "".join(f"<td>{fmt(k, r.get(k, ''))}</td>" for k, _ in cols)
-        cells += "".join(
-            f'<td class="res">{fmt(k, r.get(k, ""))}</td>' for k, _ in RESULT_COLUMNS
-        )
+        cells = "".join(f"<td>{_cell(getter, r)}</td>" for _, getter in cols)
         body.append(f"<tr{cls}>{cells}</tr>")
-
     return (
-        f'<table class="sweep"><thead><tr>{head}</tr></thead>'
+        f'<table class="grid"><thead><tr>{head}</tr></thead>'
+        f'<tbody>{"".join(body)}</tbody></table>'
+    )
+
+
+def obs_table() -> str:
+    from analysis.report_text import OBS_TABLE
+
+    head = (
+        "<tr><th>Observation</th><th>Description</th>"
+        "<th>Source (Sensor / Camera / API / Dataset)</th>"
+        "<th>Encoding / Data Type</th><th>Range</th></tr>"
+    )
+    body = "".join(
+        f"<tr><td>{o}</td><td>{d}</td><td>{s}</td><td>{e}</td><td>{rng}</td></tr>"
+        for o, d, s, e, rng in OBS_TABLE
+    )
+    return f'<table class="grid obs"><thead>{head}</thead><tbody>{body}</tbody></table>'
+
+
+def summary_table() -> str:
+    rows = []
+    for algo in ("DQN", "PPO", "A2C", "REINFORCE"):
+        data = read_csv(RESULTS / f"{algo.lower()}_sweep.csv")
+        sweep = [r for r in data if r.get("run_id") != "final"]
+        final = [r for r in data if r.get("run_id") == "final"]
+        if not sweep:
+            continue
+        best = max(sweep, key=lambda r: _f(r.get("mean_return", "-inf")))
+        src = final[0] if final else best
+        rows.append(
+            f"<tr><td>{algo}</td><td>{best['run_id']}</td>"
+            f"<td>{reward(src.get('mean_return', ''))}</td>"
+            f"<td>{survey(src.get('success_rate', ''))}</td>"
+            f"<td>{num(src.get('mean_miss', ''))}</td></tr>"
+        )
+    if not rows:
+        return '<p class="missing">No results yet.</p>'
+    return (
+        '<table class="grid"><thead><tr><th>Algorithm</th><th>Best Setting</th>'
+        "<th>Mean Reward</th><th>Survey %</th><th>Scan Offset (m)</th></tr></thead>"
+        f'<tbody>{"".join(rows)}</tbody></table>'
+    )
+
+
+def generalization_table() -> str:
+    rows = read_csv(RESULTS / "generalization.csv")
+    if not rows:
+        return '<p class="missing">Run the evaluation step first.</p>'
+    conditions, agents = [], []
+    for r in rows:
+        if r["condition"] not in conditions:
+            conditions.append(r["condition"])
+        if r["agent"] not in agents:
+            agents.append(r["agent"])
+    head = "<th>Agent</th>" + "".join(f'<th>{c.replace("_", " ")}</th>' for c in conditions)
+    body = []
+    for agent in agents:
+        by = {r["condition"]: r for r in rows if r["agent"] == agent}
+        cells = "".join(
+            f"<td>{reward(by.get(c, {}).get('mean_return', ''))} "
+            f"({survey(by.get(c, {}).get('success_rate', ''))})</td>"
+            for c in conditions
+        )
+        body.append(f"<tr><td>{agent}</td>{cells}</tr>")
+    return (
+        f'<table class="grid gen"><thead><tr>{head}</tr></thead>'
         f'<tbody>{"".join(body)}</tbody></table>'
     )
 
@@ -164,128 +234,65 @@ def figure(name: str, caption: str, cls: str = "") -> str:
     )
 
 
-def generalization_table() -> str:
-    rows = read_csv(RESULTS / "generalization.csv")
-    if not rows:
-        return '<p class="missing">Run <code>uv run main.py evaluate</code> first.</p>'
-    conditions, agents = [], []
-    for r in rows:
-        if r["condition"] not in conditions:
-            conditions.append(r["condition"])
-        if r["agent"] not in agents:
-            agents.append(r["agent"])
-
-    head = "<th>Agent</th>" + "".join(
-        f'<th>{c.replace("_", " ")}</th>' for c in conditions
-    )
-    body = []
-    for agent in agents:
-        by = {r["condition"]: r for r in rows if r["agent"] == agent}
-        cells = "".join(
-            f'<td>{fmt("mean_return", by.get(c, {}).get("mean_return", ""))}'
-            f' <span class="sub">({fmt("success_rate", by.get(c, {}).get("success_rate", ""))})</span></td>'
-            for c in conditions
-        )
-        body.append(f"<tr><td class='agent'>{agent}</td>{cells}</tr>")
-    return (
-        f'<table class="sweep gen"><thead><tr>{head}</tr></thead>'
-        f'<tbody>{"".join(body)}</tbody></table>'
-    )
-
-
-def summary_table() -> str:
-    """Best configuration per algorithm, side by side."""
-    rows = []
-    for algo in ("DQN", "PPO", "A2C", "REINFORCE"):
-        sweep = [
-            r for r in read_csv(RESULTS / f"{algo.lower()}_sweep.csv") if r.get("run_id") != "final"
-        ]
-        final = [
-            r for r in read_csv(RESULTS / f"{algo.lower()}_sweep.csv") if r.get("run_id") == "final"
-        ]
-        if not sweep:
-            continue
-        best = max(sweep, key=lambda r: float(r.get("mean_return", "-inf")))
-        source = final[0] if final else best
-        rows.append(
-            f"<tr><td class='agent'>{algo}</td>"
-            f"<td>{best['run_id']}</td>"
-            f"<td>{fmt('mean_return', source.get('mean_return', ''))}</td>"
-            f"<td>{fmt('success_rate', source.get('success_rate', ''))}</td>"
-            f"<td>{fmt('mean_miss', source.get('mean_miss', ''))}</td>"
-            f"<td>{fmt('convergence_step', best.get('convergence_step', ''))}</td>"
-            f"<td>{fmt('wall_time_s', best.get('wall_time_s', ''))} s</td></tr>"
-        )
-    if not rows:
-        return '<p class="missing">No results yet.</p>'
-    return (
-        '<table class="sweep"><thead><tr><th>Algorithm</th><th>Best config</th>'
-        "<th>Return</th><th>Surveyed</th><th>Scan off. (m)</th>"
-        "<th>Steps to 90%</th><th>Train time</th></tr></thead>"
-        f'<tbody>{"".join(rows)}</tbody></table>'
-    )
-
+# ------------------------------------------------------------------------ CSS
+# The look copies the template: grey Arial ALU header repeated on every page,
+# Times New Roman body, black text, plain black-bordered tables.
 
 CSS = """
-@page { size: A4; margin: 15mm 14mm; }
+@page { size: A4; margin: 12mm 18mm 14mm 18mm; }
 * { box-sizing: border-box; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 body {
-  font-family: "Charter", "Georgia", "Times New Roman", serif;
-  font-size: 9.1pt; line-height: 1.38; color: #16181d; margin: 0;
-  max-width: 190mm; margin-inline: auto; padding: 6mm 6mm;
+  font-family: "Times New Roman", Times, serif;
+  font-size: 11pt; line-height: 1.35; color: #000; margin: 0;
 }
-h1 { font-size: 17.5pt; margin: 0 0 1.6mm; line-height: 1.15; letter-spacing: -.2pt; }
-h2 {
-  font-size: 11.8pt; margin: 5mm 0 2mm; padding-bottom: 1mm;
-  border-bottom: 1.6px solid #16181d; letter-spacing: -.1pt;
-}
-h3 { font-size: 10pt; margin: 3.2mm 0 1.2mm; }
-p { margin: 0 0 1.9mm; text-align: justify; hyphens: auto; }
-.byline { color: #55595f; font-size: 9pt; margin-bottom: 5mm; }
-.lead { font-size: 9.6pt; }
 
-table.sweep {
-  width: 100%; border-collapse: collapse; font-size: 6.9pt;
-  margin: 1.8mm 0 1.4mm; font-family: "SF Mono", "Menlo", monospace;
-  font-variant-numeric: tabular-nums;
-}
-table.sweep th {
-  text-align: right; padding: 1mm .9mm; border-bottom: 1.2px solid #16181d;
-  font-weight: 600; white-space: nowrap;
-}
-table.sweep td { text-align: right; padding: .88mm .9mm; border-bottom: .4px solid #dcdde0; }
-table.sweep th:first-child, table.sweep td:first-child { text-align: left; }
-table.sweep th.res, table.sweep td.res { background: #f4f5f7; }
-table.sweep tr.best td { font-weight: 700; background: #eaf3ff; }
-table.sweep tr.best td.res { background: #dcebff; }
-td.agent { font-weight: 600; }
-.sub { color: #6a6e75; font-size: 6.6pt; }
+/* running header via the table-header-group trick: a thead repeats at the top
+   of every printed page in Chromium, which is how the ALU block appears on each
+   page just like the template. */
+table.layout { width: 100%; border-collapse: collapse; }
+table.layout > thead { display: table-header-group; }
+table.layout > thead > tr > td { border: none; padding: 0 0 5mm 0; }
+table.layout > tbody > tr > td { border: none; padding: 0; }
+.pagehead { font-family: Arial, Helvetica, sans-serif; }
+.pagehead .u   { font-size: 8.5pt; font-weight: bold; color: #595959; letter-spacing: .3pt; }
+.pagehead .bse { font-size: 19pt; font-weight: bold; color: #808080; margin: .3mm 0; }
+.pagehead .s   { font-size: 10.5pt; color: #a6a6a6; line-height: 1.25; }
 
-figure { margin: 2.2mm 0 2.8mm; page-break-inside: avoid; }
-figure img {
-  width: 100%; max-height: 74mm; object-fit: contain;
-  display: block; border: .5px solid #e2e3e6;
-}
-figure.tall img { max-height: 104mm; }
-figcaption { font-size: 7.4pt; color: #4a4e55; margin-top: 1mm; line-height: 1.34; }
-figcaption b { color: #16181d; }
+h1 { font-size: 12pt; font-weight: bold; margin: 0 0 3mm; }
+h2 { font-size: 12pt; font-weight: bold; margin: 5mm 0 2mm; }
+h3 { font-size: 11pt; font-weight: bold; margin: 3.5mm 0 1.5mm; padding-left: 6mm; }
+p  { margin: 0 0 2.4mm; text-align: justify; }
+ol, ul { margin: 0 0 2.4mm; padding-left: 8mm; }
+li { margin-bottom: .8mm; }
+sup { font-size: 7.5pt; }
 
-.caption { font-size: 7.4pt; color: #4a4e55; margin: -.6mm 0 2.2mm; }
-.missing { color: #b4442f; font-style: italic; font-size: 8.4pt; }
-code { font-family: "SF Mono", Menlo, monospace; font-size: 8.4pt; background: #f2f3f5; padding: .3mm 1mm; }
+.meta { margin: 0 0 4mm; }
+.meta div { margin-bottom: 1mm; }
+.meta b { font-weight: bold; }
 
-.two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 6mm; }
-.three { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0 5mm; }
-.box {
-  border-left: 2.4px solid #16181d; padding: 1.2mm 0 1.2mm 3mm;
-  margin: 2mm 0; font-size: 8.6pt; background: #fafafb;
+table.grid {
+  width: 100%; border-collapse: collapse; margin: 2mm 0 2.5mm;
+  font-size: 9.5pt; font-family: "Times New Roman", Times, serif;
 }
-ul { margin: 0 0 2.4mm; padding-left: 4.5mm; }
-li { margin-bottom: .9mm; }
+table.grid th, table.grid td {
+  border: 0.7px solid #000; padding: 1.5mm 1.8mm; text-align: left; vertical-align: top;
+}
+table.grid th { font-weight: bold; }
+table.grid tr.best td { font-weight: bold; background: #e9e9e9; }
+table.grid.obs th { text-align: center; font-style: italic; }
+table.grid.gen { font-size: 9pt; }
+
+figure { margin: 2mm 0 2.5mm; page-break-inside: avoid; text-align: center; }
+figure img { width: 100%; max-height: 68mm; object-fit: contain; display: block; }
+figure.env img { max-height: 78mm; }
+figcaption { font-size: 9pt; color: #000; margin-top: 1mm; text-align: left; line-height: 1.28; }
+
+.caption { font-size: 9pt; margin: -1mm 0 2.5mm; }
+.missing { color: #b00; font-style: italic; }
+code { font-family: "Courier New", monospace; font-size: 9.5pt; }
+.note { border: 0.7px solid #000; padding: 2mm 2.5mm; margin: 2.5mm 0; font-size: 10pt; }
 .pagebreak { page-break-before: always; }
-.kv { font-size: 8.6pt; }
-.kv td { padding: .7mm 2mm .7mm 0; vertical-align: top; }
-.kv td:first-child { font-weight: 600; white-space: nowrap; }
 """
 
 
@@ -293,91 +300,104 @@ def build() -> Path:
     from analysis import report_text as T
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    header = (
+        '<div class="pagehead"><div class="u">AFRICAN LEADERSHIP UNIVERSITY</div>'
+        '<div class="bse">[BSE]</div><div class="s">[ML TECHNIQUES II]</div>'
+        '<div class="s">[SUMMATIVE ASSIGNMENT]</div></div>'
+    )
+
     html = f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
-<title>Mission-Based RL — Subsea Inspection ROV</title>
+<title>Reinforcement Learning Summative Assignment Report</title>
 <style>{CSS}</style></head><body>
+<table class="layout"><thead><tr><td>{header}</td></tr></thead>
+<tbody><tr><td>
 
-<h1>Optimising a Subsea Inspection ROV with Reinforcement Learning</h1>
-<div class="byline">
-  Nick Lemy Kayiranga &nbsp;·&nbsp; n.kayiranga@alustudent.com &nbsp;·&nbsp;
-  Mission-Based Reinforcement Learning — Summative &nbsp;·&nbsp; {date.today():%d %B %Y}<br>
-  Repository: <code>nick-lemy_kayiranga_rl_summative</code>
+<h1>Reinforcement Learning Summative Assignment Report</h1>
+<div class="meta">
+  <div><b>Student Name:</b> Nick Lemy Kayiranga</div>
+  <div><b>Video Recording:</b> [add your video link here, 3 minutes max, camera on, share the entire screen]</div>
+  <div><b>GitHub Repository:</b> https://github.com/&lt;your-username&gt;/nick-lemy_kayiranga_rl_summative</div>
 </div>
 
-<p class="lead">{T.ABSTRACT}</p>
+<h2>1. Project Overview</h2>
+<p>{T.OVERVIEW.strip()}</p>
 
-<h2>1. Environment</h2>
-{T.ENV_INTRO}
-{figure("env_overview.png", T.CAP_ENV, cls="tall")}
+<h2>2. Environment Description</h2>
+<h3>a. Agent(s)</h3>
+{T.AGENTS}
+{figure("env_overview.png", T.CAP_ENV, cls="env")}
 
-<h3>1.1 Agent, action space and observation space</h3>
-{T.ENV_SPACES}
+<h3>b. Action Space</h3>
+{T.ACTION_SPACE}
 
-<h3>1.2 Reward structure</h3>
-{T.ENV_REWARD}
+<h3>c. Observation Space</h3>
+{T.OBS_INTRO}
+{obs_table()}
 
-<h3>1.3 Start state, termination, and stochasticity</h3>
-{T.ENV_TERMINAL}
+<h3>d. Reward Structure</h3>
+{T.REWARD}
+<div class="note">{T.BASELINE_BOX}</div>
 
-<div class="box">{T.BASELINE_BOX}</div>
+<h2>3. System Analysis And Design</h2>
+<h3>a. Deep Q-Network (DQN)</h3>
+{T.SYS_DQN}
+<h3>b. Policy Gradient Methods (REINFORCE, PPO, A2C)</h3>
+{T.SYS_PG}
 
-<h2>2. Implementation</h2>
-{T.IMPLEMENTATION}
+<h2>4. Implementation</h2>
+{T.IMPL_INTRO}
 
-<h2>3. Hyperparameter experiments</h2>
-{T.HP_INTRO}
-
-<h3>3.1 DQN (value-based)</h3>
+<h3>a. DQN</h3>
 {sweep_table("DQN")}
-<p class="caption">{T.CAP_DQN}</p>
+<p class="caption"><b>Table 1. DQN.</b> Ten settings, 200,000 steps each. Held fixed: 4 parallel
+environments, target update every 2,000 steps. The best row is shaded.</p>
 {T.DQN_ANALYSIS}
 
-<h3>3.2 PPO</h3>
-{sweep_table("PPO")}
-<p class="caption">{T.CAP_PPO}</p>
-{T.PPO_ANALYSIS}
-
-<h3>3.3 A2C</h3>
-{sweep_table("A2C")}
-<p class="caption">{T.CAP_A2C}</p>
-{T.A2C_ANALYSIS}
-
-<h3>3.4 REINFORCE</h3>
+<h3>b. REINFORCE</h3>
 {sweep_table("REINFORCE")}
-<p class="caption">{T.CAP_REINFORCE}</p>
+<p class="caption"><b>Table 2. REINFORCE.</b> Ten settings, 200,000 steps each. Updates use complete
+episodes only, so "Episodes / Update" is the real batch size.</p>
 {T.REINFORCE_ANALYSIS}
 
-<h2 class="pagebreak">4. Results and discussion</h2>
-<h3>4.1 Cumulative reward</h3>
+<h3>c. PPO</h3>
+{sweep_table("PPO")}
+<p class="caption"><b>Table 3. PPO.</b> Ten settings, 200,000 steps each, 8 parallel environments.
+Held fixed: value coefficient 0.5, gradient clip 0.5.</p>
+{T.PPO_ANALYSIS}
+
+<h3>d. A2C</h3>
+{sweep_table("A2C")}
+<p class="caption"><b>Table 4. A2C.</b> Ten settings, 200,000 steps each, 8 parallel environments.
+"Rollout" is per environment, so the real batch is eight times larger.</p>
+{T.A2C_ANALYSIS}
+
+<h2>5. Results Discussion</h2>
+<h3>a. Cumulative Rewards</h3>
 {figure("fig01_learning_curves.png", T.CAP_FIG1)}
 {figure("fig02_algorithm_comparison.png", T.CAP_FIG2)}
-{T.DISCUSSION_REWARD}
-
-<h3>4.2 Training objectives and exploration</h3>
+{T.DISCUSSION_CUMULATIVE}
 {figure("fig03_dqn_objective.png", T.CAP_FIG3)}
 {figure("fig04_pg_entropy.png", T.CAP_FIG4)}
 {T.DISCUSSION_OBJECTIVE}
 
-<h3>4.3 Convergence</h3>
+<h3>b. Episodes To Converge</h3>
 {figure("fig05_convergence.png", T.CAP_FIG5)}
-{T.DISCUSSION_CONVERGENCE}
+{T.DISCUSSION_CONVERGE}
+{summary_table()}
+<p class="caption"><b>Table 5. Longer final runs.</b> The best setting of each algorithm, trained
+again for 1,500,000 steps and scored on the held-out seeds.</p>
 
-<h3>4.4 Generalisation</h3>
+<h3>c. Generalization</h3>
 {generalization_table()}
 <p class="caption">{T.CAP_GEN_TABLE}</p>
 {figure("fig06_generalization.png", T.CAP_FIG6)}
 {T.DISCUSSION_GENERALIZATION}
 
-<h3>4.5 What the agents actually do</h3>
-{figure("fig07_outcomes.png", T.CAP_FIG7)}
-{T.DISCUSSION_BEHAVIOUR}
-
-<h2>5. Summary and conclusion</h2>
-{summary_table()}
-<p class="caption">{T.CAP_SUMMARY}</p>
+<h2>6. Conclusion and Discussion</h2>
 {T.CONCLUSION}
 
+</td></tr></tbody></table>
 </body></html>
 """
     out = OUT_DIR / "report.html"

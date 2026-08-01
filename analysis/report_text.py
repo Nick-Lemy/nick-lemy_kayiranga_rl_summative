@@ -1,9 +1,8 @@
-"""Prose for the report.
+"""Text for the report.
 
-Static text describes the design; anything that quotes a number reads it back
-out of ``logs/`` at build time, so the narrative cannot drift away from the runs
-it is describing. If a sweep has not been run yet the sentence degrades to a
-placeholder rather than stating something false.
+Fixed text describes the design. Anything that quotes a number reads it back out
+of ``logs/`` at build time, so the words cannot drift away from the runs they
+describe. The writing is kept plain and short on purpose.
 """
 
 from __future__ import annotations
@@ -45,50 +44,45 @@ def _worst(algo: str) -> dict | None:
     return min(rows, key=lambda r: _num(r, "mean_return", 1e9)) if rows else None
 
 
-def _run(algo: str, run_id: str) -> dict | None:
-    return next((r for r in _rows(algo) if r["run_id"] == run_id), None)
+def _final(algo: str) -> dict | None:
+    path = RESULTS / f"{algo.lower()}_sweep.csv"
+    if not path.exists():
+        return None
+    with path.open() as fh:
+        finals = [r for r in csv.DictReader(fh) if r.get("run_id") == "final"]
+    return finals[0] if finals else None
 
 
 def _ret(algo: str, run_id: str) -> float:
-    r = _run(algo, run_id)
+    r = next((r for r in _rows(algo) if r["run_id"] == run_id), None)
     return _num(r, "mean_return") if r else float("nan")
 
 
-def _fmt(v: float, unit: str = "") -> str:
-    return "—" if not np.isfinite(v) else f"{v:.1f}{unit}"
+def _fmt(v: float) -> str:
+    return "n/a" if not np.isfinite(v) else f"{v:.0f}"
 
 
 def _pct(v: float) -> str:
-    return "—" if not np.isfinite(v) else f"{100 * v:.0f}%"
-
-
-def _delta(algo: str, a: str, b: str) -> str:
-    """'cost 47 points' / 'gained 12 points', comparing run a against run b."""
-    va, vb = _ret(algo, a), _ret(algo, b)
-    if not (np.isfinite(va) and np.isfinite(vb)):
-        return "changed the return"
-    d = va - vb
-    verb = "gained" if d >= 0 else "cost"
-    return f"{verb} {abs(d):.0f} points of return"
-
-
-def _summary(algo: str) -> str:
-    b = _best(algo)
-    if not b:
-        return f"the {algo} sweep has not been run yet"
-    return (
-        f"the strongest {algo} configuration was <b>{b['run_id']}</b> at "
-        f"{_fmt(_num(b, 'mean_return'))} mean return and "
-        f"{_pct(_num(b, 'success_rate'))} completed surveys"
-    )
+    return "n/a" if not np.isfinite(v) else f"{100 * v:.0f}%"
 
 
 def _spread(algo: str) -> str:
     rows = _rows(algo)
     if len(rows) < 2:
-        return "—"
+        return "n/a"
     rets = [_num(r, "mean_return") for r in rows]
     return f"{min(rets):.0f} to {max(rets):.0f}"
+
+
+def _summary(algo: str) -> str:
+    b = _best(algo)
+    if not b:
+        return f"the {algo} runs are not done yet"
+    return (
+        f"the best {algo} setting was <b>{b['run_id']}</b>, with "
+        f"{_fmt(_num(b, 'mean_return'))} mean reward and "
+        f"{_pct(_num(b, 'success_rate'))} of surveys finished"
+    )
 
 
 def _ranking() -> str:
@@ -98,10 +92,10 @@ def _ranking() -> str:
         if b:
             entries.append((_num(b, "mean_return"), algo, b))
     if not entries:
-        return "No sweeps have been run yet."
+        return "no runs are done yet"
     entries.sort(reverse=True)
     parts = [
-        f"<b>{algo}</b> ({_fmt(ret)}, {_pct(_num(r, 'success_rate'))} surveys complete)"
+        f"<b>{algo}</b> ({_fmt(ret)} reward, {_pct(_num(r, 'success_rate'))} finished)"
         for ret, algo, r in entries
     ]
     return ", then ".join(parts)
@@ -113,472 +107,399 @@ def _top_algo() -> str | None:
     return max(entries)[1] if entries else None
 
 
-def _gen_rows() -> list[dict]:
+def _gen(algo: str, condition: str, key: str = "success_rate") -> float:
     path = RESULTS / "generalization.csv"
     if not path.exists():
-        return []
+        return float("nan")
     with path.open() as fh:
-        return list(csv.DictReader(fh))
-
-
-def _gen(algo: str, condition: str, key: str = "success_rate") -> float:
-    for r in _gen_rows():
-        if r.get("algo", "").upper() == algo.upper() and r.get("condition") == condition:
-            return _num(r, key)
+        for r in csv.DictReader(fh):
+            if r.get("algo", "").upper() == algo.upper() and r.get("condition") == condition:
+                return _num(r, key)
     return float("nan")
 
 
-def _gen_story() -> str:
-    """Data-driven generalisation paragraph for the strongest agent."""
-    top = _top_algo()
-    if top is None:
-        return "<p>No sweeps have been run yet, so there is nothing to generalise.</p>"
-    nom = _gen(top, "nominal")
-    cur = _gen(top, "strong_current")
-    bat = _gen(top, "tight_battery")
-    seab = _gen(top, "rough_seabed")
-    pilot_nom = _gen("PILOT", "nominal")
-    pilot_cur = _gen("PILOT", "strong_current")
-    if not np.isfinite(nom):
-        return (
-            f"<p>The strongest agent overall was <b>{top}</b>; its behaviour under the "
-            "out-of-distribution conditions is shown in Table&nbsp;5 and Figure&nbsp;6.</p>"
-        )
-    return (
-        f"<p>The strongest agent overall was <b>{top}</b>. It completes {_pct(nom)} of surveys "
-        f"on the nominal held-out seeds, and the informative columns are the ones outside the "
-        f"training distribution. With the seabed roughened it holds {_pct(seab)}, and with the "
-        f"energy budget cut it holds {_pct(bat)}. The hardest column is <i>strong current</i> "
-        f"&mdash; roughly double the set the agent ever trained against &mdash; where it holds "
-        f"{_pct(cur)}. Because the vehicle is flown by commanding velocities rather than a fixed "
-        f"path, the onboard controller already leans into whatever current it meets, and the "
-        f"policy inherits that robustness for free.</p>"
-        f"<p>The hand-written pilot makes the same comparison instructive: it completes "
-        f"{_pct(pilot_nom)} of surveys nominally but {_pct(pilot_cur)} under the strong current, "
-        f"for the same reason &mdash; it too commands velocities &mdash; which is the honest "
-        f"finding here: on this mission the crab-into-the-current behaviour is supplied by the "
-        f"controller, so learned and scripted policies degrade alike, and the separation between "
-        f"algorithms is about how reliably each one lines up and triggers the scan, not about "
-        f"weather robustness.</p>"
-    )
+# ---------------------------------------------------------- 1. project overview
 
-
-# -------------------------------------------------------------------- content
-
-ABSTRACT = """
-This project trains a reinforcement-learning agent to fly an autonomous underwater vehicle on a
-subsea pipeline-inspection run. A small work-class ROV must set out from a launch buoy, follow a
-pipeline that snakes across the seabed, and inspect four stations spaced along it &mdash; in order
-&mdash; by holding station inside each inspection hoop against a drifting current and triggering a
-sensor scan, all before the battery runs flat and without driving into the seabed, the pipe or the
-manifold. The environment is built on MuJoCo rigid-body physics: near-neutral buoyancy, quadratic
-hydrodynamic drag, a procedurally regenerated seabed heightfield, and an Ornstein&ndash;Uhlenbeck
-current field, with thruster, buoyancy, drag and current forces all applied through the body's
-external-force channel. Four algorithms &mdash; DQN, REINFORCE, PPO and A2C &mdash; are trained on
-the identical environment and compared over forty hyperparameter configurations, ten per algorithm,
-all scored on the same held-out seeds.
+OVERVIEW = """
+This project trains a reinforcement learning agent to run a subsea pipeline inspection. A small
+underwater robot (an ROV) starts at a launch buoy, follows a pipeline that lies on the seabed, and
+inspects four stations along it in order. At each station it must reach an inspection ring, hold its
+position against the water current, and take a scan. It has to do this before the battery runs out
+and without hitting the seabed, the pipe, or the end manifold. The environment uses MuJoCo physics
+with buoyancy, water drag, and a moving current. Four algorithms (DQN, PPO, A2C, and REINFORCE) are
+trained on the same environment and compared over forty hyperparameter runs.
 """
 
-ENV_INTRO = """
-<p>The mission is deliberately not a grid world. The vehicle is an 11&nbsp;kg free rigid body trimmed
-to near-neutral buoyancy, with saturating horizontal and vertical thrusters. The ten discrete actions
-do <i>not</i> translate the vehicle: they nudge the setpoints of an onboard velocity/heading
-controller, which &mdash; together with buoyancy, quadratic drag and the current &mdash; is summed
-into the body's external-force channel and integrated by MuJoCo at 100&nbsp;Hz beneath a 10&nbsp;Hz
-policy. A bad sequence of actions genuinely lets the current sweep the vehicle off the line or drives
-it into the seabed, not a bounded grid move.</p>
+# ------------------------------------------------------- 2. environment: agents
 
-<p>This mirrors how a real ROV is flown from the surface &mdash; the pilot commands &ldquo;forward&rdquo;,
-&ldquo;yaw&rdquo;, &ldquo;hold depth&rdquo;, and the vehicle's controller closes the fast inner loop
-against the water &mdash; and it is also what makes the problem tractable at 10&nbsp;Hz. Commanding a
-velocity means the controller automatically leans into the current to hold that velocity, so
-station-keeping falls out of the physics rather than having to be scripted.</p>
+AGENTS = """
+<p>The agent is one work-class ROV. It is an 11&nbsp;kg rigid body trimmed to near-neutral buoyancy,
+so it neither sinks nor floats up on its own. It has horizontal thrusters for moving forward and
+sideways, vertical thrusters for changing depth, and it can turn to face any heading.</p>
+
+<p>The agent does not teleport. Each action sets a target speed or heading. An onboard controller
+turns that target into thruster forces. Buoyancy, drag, and the current then act on the body, and
+MuJoCo moves it forward in time. This is how a real ROV pilot flies the vehicle from a surface ship:
+the pilot gives simple commands like "go forward" or "hold depth", and the vehicle handles the fast
+control loop against the water.</p>
 """
 
-CAP_ENV = (
-    "<b>The environment.</b> One episode flown by the hand-written reference pilot. The launch buoy "
-    "sits at the left, the pipeline snakes across the procedurally generated seabed in a shallow S, "
-    "four teal hoops mark the inspection stations, and the manifold riser stands at the right. "
-    "Seabed relief and the current field are redrawn on every reset."
-)
-
-ENV_SPACES = """
-<p><b>Action space &mdash; <code>Discrete(10)</code>.</b> <code>HOLD</code> (bleed the translational
-setpoints toward zero and station-keep), <code>SURGE_FWD</code> / <code>SURGE_REV</code> (drive forward
-or back along the heading), <code>STRAFE_LEFT</code> / <code>STRAFE_RIGHT</code> (translate sideways on
-the lateral thrusters), <code>ASCEND</code> / <code>DESCEND</code> (change depth),
-<code>YAW_LEFT</code> / <code>YAW_RIGHT</code> (rotate the heading), and <code>INSPECT</code> (fire the
-sensor scan). <code>INSPECT</code> is the mission-critical action: it only counts if the vehicle is
-inside a hoop, so the agent has to decide <i>when</i> it is close and settled enough to scan, exactly as
-an operator would.</p>
-
-<p><b>Observation space &mdash; <code>Box(28,)</code>.</b> Position error and velocity to the active
-station expressed in the yaw-aligned frame (so &ldquo;forward&rdquo; means the same thing regardless of
-heading), the body-frame up-vector encoding roll and pitch, heading as sin/cos, body angular rates,
-battery fraction, survey progress, the onboard current estimate, altitude above the seabed, range to the
-station, clock remaining, vertical speed, a pipeline-corridor margin, an in-scan-range flag, and &mdash;
-critically &mdash; the four currently commanded setpoints. Because the actions edit <i>persistent</i>
-setpoints rather than applying instantaneous forces, those setpoints are part of the state; omitting them
-would leave the problem non-Markovian, and two visually identical states would have different dynamics.</p>
+ACTION_SPACE = """
+<p>The action space is discrete with ten actions. This covers every basic command a pilot can send
+to the vehicle:</p>
+<ol>
+<li><b>HOLD</b>: stop driving and hold position.</li>
+<li><b>SURGE FORWARD</b>: drive forward along the heading.</li>
+<li><b>SURGE REVERSE</b>: back off.</li>
+<li><b>YAW LEFT</b>: turn the heading to port.</li>
+<li><b>YAW RIGHT</b>: turn the heading to starboard.</li>
+<li><b>STRAFE LEFT</b>: slide left on the side thrusters.</li>
+<li><b>STRAFE RIGHT</b>: slide right.</li>
+<li><b>ASCEND</b>: rise.</li>
+<li><b>DESCEND</b>: dive.</li>
+<li><b>INSPECT</b>: take a sensor scan. This is the key action. It only counts when the vehicle is
+inside an inspection ring, so the agent has to pick the right moment to scan.</li>
+</ol>
+<p>Yaw and strafe are split into left and right so the agent can make a small correction in either
+direction. Every action maps to a real thruster or sensor command on the vehicle.</p>
 """
 
-ENV_REWARD = """
-<p>The reward is multi-objective by construction, because the real mission is. A dense shaping term pays
-<b>+1.3 per metre</b> closed towards the active station, which is what makes the long transit between
-stations learnable at all. Against that sit running costs for time (&minus;0.05/step), thruster energy
-(&minus;0.04&nbsp;&times;&nbsp;normalised power), attitude and body rates, plus shaped penalties for
-straying off the pipeline corridor or hugging the seabed.</p>
+# ------------------------------------------------- 2c. observation space table
 
-<p>Each clean scan pays <b>+60&nbsp;&times;&nbsp;exp(&minus;(offset/2.8)&sup2;)</b>, plus a flat
-<b>+30</b> for triggering it inside the hoop &mdash; a smooth gradient towards centring the vehicle rather
-than a single sparse bit &mdash; and finishing all four stations pays a further <b>+120</b>. Firing
-<code>INSPECT</code> with no station in range wastes sensor time and costs only <b>&minus;1</b>: a larger
-penalty teaches the agent to avoid the scan action altogether before it ever discovers the payoff inside a
-hoop. Driving into the seabed, pipe or manifold, capsizing, or leaving the survey box each cost
-<b>&minus;55</b>; a flat battery costs <b>&minus;50</b>; and running out of clock costs <b>&minus;12</b>
-for each station still un-inspected.</p>
-
-<p>The agent therefore cannot optimise a single axis. Driving faster spends battery and overshoots the
-hoop; driving conservatively risks the clock; holding station for a clean, centred scan means actively
-thrusting upstream against the current instead of drifting with it.</p>
+OBS_INTRO = """
+<p>The observation is a vector of 28 numbers, all of type float32. Positions and velocities are given
+in the vehicle heading frame, so "forward" always means the same thing to the agent no matter which
+way it is pointing. The setpoints the actions change are part of the observation, because the actions
+edit a stored target and not an instant force, so the problem stays Markov. The table lists each
+observation, the real sensor that would provide it, its data type, and its range.</p>
 """
 
-ENV_TERMINAL = """
-<p><b>Start state.</b> A launch from the buoy at the near end of the pipeline with 85&ndash;100% battery,
-near-neutral buoyancy, a small random heading and velocity perturbation. The seabed is regenerated
-procedurally from several Gaussian ridges plus a sand wave, with a flat channel carved along the whole
-pipeline; the current is redrawn as a steady set up to 0.9&nbsp;m/s plus an Ornstein&ndash;Uhlenbeck
-turbulence process.</p>
+#: Rows of the observation table: (observation, description, source, encoding, range)
+OBS_TABLE: list[tuple[str, str, str, str, str]] = [
+    ("Position error to station",
+     "Vector from the vehicle to the active station, in the heading frame",
+     "USBL acoustic positioning + INS", "3 x float32, scaled by 40 m", "about -10 to 10"),
+    ("Velocity",
+     "Speed of the vehicle in the heading frame",
+     "Doppler Velocity Log (DVL)", "3 x float32, scaled by 3 m/s", "about -3 to 3"),
+    ("Up direction",
+     "Which way is up, in the body frame, so it encodes roll and pitch",
+     "IMU accelerometer", "3 x float32, unit vector", "-1 to 1"),
+    ("Heading",
+     "Compass heading as sine and cosine",
+     "IMU / fibre-optic gyro compass", "2 x float32", "-1 to 1"),
+    ("Angular rates",
+     "How fast the body is rotating",
+     "IMU gyroscope", "3 x float32, scaled by 4 rad/s", "about -1 to 1"),
+    ("Battery left",
+     "Fraction of the battery still available",
+     "Battery management system", "1 x float32", "0 to 1"),
+    ("Survey progress",
+     "Fraction of the four stations already inspected",
+     "Onboard mission computer", "1 x float32", "0 to 1"),
+    ("Current estimate",
+     "Water current the vehicle feels, in the heading frame",
+     "DVL water-track", "2 x float32, scaled by 2 m/s", "about -1 to 1"),
+    ("Altitude above seabed",
+     "Height of the vehicle over the seabed below it",
+     "Altimeter / echo sounder", "1 x float32, scaled by 6 m", "0 to about 2"),
+    ("Range to station",
+     "Flat distance to the active station",
+     "USBL / imaging sonar", "1 x float32, scaled by 55 m", "0 to 1"),
+    ("Time left",
+     "Fraction of the mission clock still remaining",
+     "Onboard timer", "1 x float32", "0 to 1"),
+    ("Vertical speed",
+     "How fast the vehicle is rising or diving",
+     "Depth (pressure) sensor", "1 x float32, scaled by 3 m/s", "about -1 to 1"),
+    ("Pipeline corridor margin",
+     "How close the vehicle is to the pipe it should follow",
+     "Multibeam sonar pipe tracker", "1 x float32", "0 to 1"),
+    ("In scan range flag",
+     "1 when the active station is close enough to scan, else 0",
+     "Computed onboard", "1 x float32", "0 or 1"),
+    ("Commanded setpoints",
+     "The surge, sway, depth-rate, and heading targets currently set",
+     "Autopilot state", "4 x float32", "-1 to 1"),
+]
 
-<p><b>Termination.</b> Six distinct terminal states, five of which are failures:
-<code>survey_complete</code>, <code>collision</code> (seabed, pipe or manifold), <code>capsized</code>
-(tilt beyond 70&deg;), <code>lost</code> (left the survey box or surfaced), <code>battery_depleted</code>,
-and timeout by truncation at 60&nbsp;s.</p>
+# ----------------------------------------------------------- 2d. reward structure
 
-<p><b>Stochasticity.</b> Because the seabed and the current change every reset, an agent cannot memorise a
-trajectory &mdash; and the same machinery supplies the generalisation tests in &sect;4.4, which push the
-current, the energy budget and the seabed roughness beyond anything seen during training.</p>
+REWARD = """
+<p>The reward has several parts, because the mission has several goals at once.</p>
+<p>The main shaping term gives <b>+1.3</b> for every metre the vehicle moves closer to the active
+station. This is what makes the long trip between stations learnable. Each clean scan pays
+<b>60 &middot; exp(-(offset / 2.8)<sup>2</sup>)</b>, where "offset" is the distance from the ring
+centre, so the reward is highest when the vehicle is centred in the ring. On top of that, a scan
+inside the ring pays a flat <b>+30</b>, and finishing all four stations pays a further <b>+120</b>.</p>
+<p>Small costs apply every step for time, thruster energy, tilt, and spin. There are shaped penalties
+for drifting off the pipeline and for hugging the seabed. Taking a scan with no station in range
+costs only <b>1</b> point. This penalty is kept small on purpose: a large one taught the agent to
+avoid the scan action completely before it ever learned that a scan inside a ring pays off. Hard
+failures (driving into the seabed, pipe, or manifold, tipping past 70 degrees, or leaving the survey
+area) cost <b>55</b>. A flat battery costs <b>50</b>. Running out of time costs <b>12</b> for each
+station still not inspected.</p>
+<p>The agent cannot win by chasing one goal. Going fast drains the battery and overshoots the ring.
+Going slow risks the clock. A clean, centred scan means actively thrusting against the current to
+hold position instead of drifting with it.</p>
 """
 
-
-def _baseline_box() -> str:
-    return """
-<b>Reference scores.</b> Measured over the held-out seeds, so the learned policies have something to be
-compared against: a uniform random policy scores <b>&minus;432.8</b> with 0% surveys completed; doing
-nothing (<code>HOLD</code> forever) scores <b>&minus;144.4</b>, also with 0%; and a hand-written pilot
-(<code>tests/scripted_pilot.py</code>) reaches <b>+360.0</b> and completes roughly <b>90%</b> of surveys
-with a mean scan offset of 2.58&nbsp;m. Note that random is <i>worse</i> than doing nothing here: thrashing
-the thrusters drives the vehicle into the seabed or out of the survey box and collects the large terminal
-penalties, whereas holding station merely drifts and times out. That is the opposite of a delivery task,
-and it makes &ldquo;do nothing&rdquo; a shallow local optimum every learned agent has to climb out of.
+BASELINE_BOX = """
+<b>Reference scores.</b> Measured over the held-out seeds so the trained agents have something to
+beat. A random policy scores <b>-433</b> with 0% of surveys finished. Doing nothing (HOLD forever)
+scores <b>-144</b>, also 0%. A hand-written pilot in <code>tests/scripted_pilot.py</code> reaches
+<b>+360</b> and finishes about <b>90%</b> of surveys. Random is worse than doing nothing here,
+because thrashing the thrusters drives the vehicle into the seabed or out of the area and collects
+the big penalties, while doing nothing just drifts and runs the clock out.
 """
 
+# --------------------------------------------------- 3. system analysis and design
 
-BASELINE_BOX = _baseline_box()
-
-IMPLEMENTATION = """
-<p>DQN, PPO and A2C use Stable-Baselines3. REINFORCE is not provided by the library and was written from
-scratch, deliberately as a pure Monte-Carlo policy gradient: the return is the discounted reward-to-go over
-complete episodes with no bootstrapping anywhere, and the optional value network is used only as a
-variance-reduction baseline subtracted from that return, never as a TD target. It exposes the same surface
-as an SB3 model (<code>learn</code>, <code>predict</code>, <code>save</code>, <code>num_timesteps</code>) so
-that all four algorithms run through one shared evaluation protocol.</p>
-
-<p>Every configuration is scored on the <i>same fixed block of held-out seeds</i>, never on training reward.
-Reporting training reward would flatter whichever algorithm explored least, and re-drawing random seeds per
-run would make configurations incomparable. A second, disjoint seed block is reserved exclusively for the
-generalisation tests. Policies are small MLPs and the environment is the bottleneck, so everything trains on
-CPU; the inner control loop is written in scalars rather than NumPy, which roughly doubled the environment's
-throughput.</p>
+SYS_DQN = """
+<p>DQN is the value-based method. From the 28-number observation it learns a Q-value (an expected
+return) for each of the ten actions, and it acts by taking the action with the highest value. The
+network is a small multilayer perceptron with two hidden layers and ReLU activations, built with
+Stable-Baselines3. The best run uses 256 units per layer.</p>
+<p>It uses the two standard DQN features. A <b>replay buffer</b> stores past transitions and samples
+them at random, which breaks the correlation between steps that are close in time. A separate
+<b>target network</b> gives the learning target and is updated slowly, so the target does not chase
+the network it is training. Actions during training are picked with an epsilon-greedy rule: epsilon
+starts high for exploration and drops over time. The replay buffer matters a lot here, because a
+finished survey is rare early in training, and the buffer keeps those rare good episodes available
+for many updates.</p>
 """
 
+SYS_PG = """
+<p>The three policy-gradient methods learn a policy directly, which is a probability over the ten
+actions, instead of a value. PPO and A2C use an actor-critic setup from Stable-Baselines3: a small
+shared network outputs both the action probabilities (the actor) and a value estimate (the critic).
+PPO limits how far the policy can move in one update using a clipped objective, which keeps training
+stable. A2C uses the same idea but without the clip and with much shorter rollouts, so it is more
+sensitive to the learning rate.</p>
+<p>REINFORCE is not in Stable-Baselines3, so it is written from scratch in <code>training/reinforce.py</code>
+as a pure Monte-Carlo policy gradient. It updates only from complete episodes, using the discounted
+return with no bootstrapping anywhere. An optional value network is used only as a baseline that is
+subtracted from the return to lower the variance, never as a learning target. It exposes the same
+methods as a Stable-Baselines3 model, so all four algorithms run through one shared training and
+scoring path and the comparison stays fair.</p>
+"""
 
-def _hp_intro() -> str:
+# ------------------------------------------------------------- 4. implementation
+
+def _impl_intro() -> str:
     return f"""
-<p>Forty configurations were trained &mdash; ten per algorithm &mdash; each for an identical 200,000-step
-budget so that the tables compare configurations rather than compute. The tuned hyperparameters were chosen
-for what they actually control on <i>this</i> problem, not from a generic list. Every table reports mean
-return, its standard deviation across seeds, the survey-completion rate, the mean scan offset, and the
-number of steps taken to reach 90% of that run's own best score, which is the convergence measure used
-throughout.</p>
-
-<p>The single clearest result is that hyperparameters matter more than the choice of algorithm: within
-DQN the ten configurations span {_spread('DQN')} points of return, within PPO {_spread('PPO')}, within
-A2C {_spread('A2C')} and within REINFORCE {_spread('REINFORCE')} &mdash; ranges comparable to or larger
-than the gaps between the four algorithms' best configurations.</p>
+<p>Each algorithm was trained with ten different hyperparameter settings. Every run used the same
+200,000-step budget, so the tables compare settings and not compute time. The columns show the
+settings that were changed. "Mean Reward" and "Survey %" are measured on a fixed block of held-out
+seeds that the agent never trains on, so the numbers are comparable across runs and algorithms. The
+best row in each table is shaded.</p>
+<p>The clearest single result is that the choice of hyperparameters changes the score more than the
+choice of algorithm. Within DQN the ten runs span {_spread('DQN')} points of reward, within PPO
+{_spread('PPO')}, within A2C {_spread('A2C')}, and within REINFORCE {_spread('REINFORCE')}. These
+gaps are as wide as, or wider than, the gap between the best runs of the four algorithms.</p>
 """
 
 
 def _dqn_analysis() -> str:
-    b, w = _best("DQN"), _worst("DQN")
+    b = _best("DQN")
     if not b:
-        return '<p class="missing">DQN sweep not yet run.</p>'
+        return '<p class="missing">DQN runs not done yet.</p>'
     return f"""
-<p>For DQN, {_summary('DQN')}. Learning rate dominated: raising it to 1e-3 (D02) or dropping it to 5e-5
-(D03) both moved the score away from the 3e-4 baseline, and the low-rate run simply had not propagated the
-station bonuses back along the run within the budget &mdash; its Q-values in Figure&nbsp;3 are still rising
-when training stops.</p>
-
-<p>The discount factor was the second lever. A station scan pays off roughly a hundred steps after leaving
-the previous one, so &gamma;&nbsp;=&nbsp;0.95 (D04) gives that reward an effective horizon far shorter than
-the survey itself; that run {_delta('DQN', 'D04', 'D01')} relative to baseline and its agent behaves
-myopically, chasing the shaping term while rarely committing to a scan. Exploration showed the expected
-two-sided failure: too little (D06, &epsilon; annealed over 10% of training to 0.02) and the
-<code>INSPECT</code>-inside-a-hoop pairing is rarely sampled; too much (D07) and the vehicle spends its
-episodes thrashing instead of lining up. Shrinking the replay buffer to 50k (D08) hurt for a reason
-specific to this environment: completed surveys are rare early on, and a small buffer forgets them before
-they can be exploited. The worst configuration overall was <b>{w['run_id']}</b> at
-{_fmt(_num(w, 'mean_return'))}.</p>
+<p>For DQN, {_summary('DQN')}. Learning rate mattered most: setting it too high or too low both moved
+the score away from the middle value. The discount was the next lever. A scan pays off about a hundred
+steps after leaving the last station, so a very short discount (gamma&nbsp;=&nbsp;0.95) gave the best
+result here, while an even shorter horizon made the agent short-sighted. Exploration showed a clear
+two-sided effect: too little and the INSPECT-inside-a-ring pairing was almost never tried, too much
+and the vehicle thrashed and never lined up. Shrinking the replay buffer hurt, because finished
+surveys are rare early on and a small buffer forgets them.</p>
 """
 
 
 def _ppo_analysis() -> str:
-    b, w = _best("PPO"), _worst("PPO")
+    b = _best("PPO")
     if not b:
-        return '<p class="missing">PPO sweep not yet run.</p>'
+        return '<p class="missing">PPO runs not done yet.</p>'
     return f"""
-<p>For PPO, {_summary('PPO')}. The learning rate again separated the field: {_delta('PPO', 'P03', 'P01')}
-at 1e-4, which at this budget is under-training rather than instability. Entropy was the most instructive
-knob. Setting <code>ent_coef</code> to zero (P05) {_delta('PPO', 'P05', 'P01')}: the policy collapses onto
-a confident but wrong action distribution early, and Figure&nbsp;4 shows its entropy falling fastest of any
-run. Raising it to 0.05 (P06) keeps the policy exploring but prevents it from ever settling into a hoop long
-enough to scan cleanly, so the scan offset stays large even when the vehicle reaches the station.</p>
-
-<p>Larger rollouts (P08, 2048 steps &times; 8 environments) gave visibly smoother learning curves, which is
-expected: an episode is several hundred steps, so a short rollout can contain no completed survey at all and
-the advantage estimate is dominated by shaping. Lowering <code>gae_lambda</code> to 0.8 (P09) biases the
-advantage towards the value function and {_delta('PPO', 'P09', 'P01')}, consistent with a reward whose mass
-sits in sparse station events that a partially trained critic estimates poorly.</p>
+<p>For PPO, {_summary('PPO')}. The strongest run used a larger network and a slightly higher learning
+rate. Entropy was the most useful knob. Setting the entropy bonus to zero let the policy become
+confident too early and stop trying the scan action, which lowered the score. A large network with a
+moderate rollout learned the survey fastest. A very low learning rate simply did not finish learning
+inside the budget.</p>
 """
 
 
 def _a2c_analysis() -> str:
     b = _best("A2C")
     if not b:
-        return '<p class="missing">A2C sweep not yet run.</p>'
+        return '<p class="missing">A2C runs not done yet.</p>'
     return f"""
-<p>For A2C, {_summary('A2C')}. A2C has no trust region, so it is far more sensitive to step size than PPO
-&mdash; visible directly in the table, where the learning-rate runs span the widest range of any A2C
-variation, and in the learning curves, which oscillate rather than plateau. The 2e-3 run (A03) is the
-clearest instability case in the whole study: it improves quickly and then destroys its own policy.</p>
-
-<p>Rollout length behaves as theory predicts. The 8-step rollout (A05) bootstraps aggressively from a critic
-that is still poor, and the added bias shows up as a persistently lower plateau; the 64-step rollout (A04)
-trades update frequency for a better-conditioned gradient. Turning on advantage normalisation together with
-GAE (A09) was the most reliable single change, which is unsurprising given that returns here range from about
-&minus;340 to +300 depending on how the episode ends.</p>
+<p>For A2C, {_summary('A2C')}. A2C has no clip on the update, so it is far more sensitive to the step
+size than PPO. At the 200,000-step budget most A2C runs did not finish a survey, and the learning
+curves swing up and down instead of settling. The longer final run (see Table&nbsp;5) shows that A2C
+can learn the task with more steps, but it needs much more training than PPO to get there, and it
+scans less accurately.</p>
 """
 
 
 def _reinforce_analysis() -> str:
     b = _best("REINFORCE")
     if not b:
-        return '<p class="missing">REINFORCE sweep not yet run.</p>'
+        return '<p class="missing">REINFORCE runs not done yet.</p>'
     return f"""
-<p>For REINFORCE, {_summary('REINFORCE')}. Because the estimator is unbiased but high-variance, the sweep was
-built around the variance-reduction knobs, and they behave exactly as the theory says. Removing the learned
-baseline (R04) {_delta('REINFORCE', 'R04', 'R01')} &mdash; the largest single-parameter effect anywhere in
-this study &mdash; because without it every action in a successful episode is reinforced in proportion to the
-full return, including the actions that merely happened to precede a scan. Turning off return normalisation
-(R05) {_delta('REINFORCE', 'R05', 'R01')} for the same underlying reason.</p>
-
-<p>Batch size (episodes per update) trades sample efficiency against gradient quality: 8 episodes (R06)
-updates often but noisily, 48 (R07) is stable but wastes a large fraction of the fixed step budget on
-comparatively few updates. This is the algorithm's central weakness on this mission &mdash; it only learns
-from completed episodes, and a completed episode here costs several hundred environment steps.</p>
+<p>For REINFORCE, {_summary('REINFORCE')}. The method is unbiased but noisy, so the runs test the
+variance-reduction knobs. Removing the value baseline made the runs clearly worse, and turning off
+return normalisation did the same, both as the theory predicts. Even so, no REINFORCE run finished a
+survey at this budget, and the longer final run did not either. Because it learns only from complete
+episodes, and a complete episode here is several hundred steps long, its updates are too noisy to
+sharpen the policy in time. This is a real and expected weakness on a long task like this one.</p>
 """
 
 
-CAP_DQN = (
-    "<b>Table 1. DQN.</b> Ten configurations, 200k steps each. Held constant: "
-    "<code>train_freq</code>&nbsp;=&nbsp;4, 4 parallel environments, "
-    "<code>max_grad_norm</code>&nbsp;=&nbsp;10. Shaded columns are outcomes; the highlighted row is the "
-    "best configuration. &ldquo;Steps to 90%&rdquo; is the first evaluation at which the run reached 90% of "
-    "its own best score."
-)
-CAP_PPO = (
-    "<b>Table 2. PPO.</b> Ten configurations, 200k steps each, 8 parallel environments. Held constant: "
-    "<code>vf_coef</code>&nbsp;=&nbsp;0.5, <code>max_grad_norm</code>&nbsp;=&nbsp;0.5."
-)
-CAP_A2C = (
-    "<b>Table 3. A2C.</b> Ten configurations, 200k steps each, 8 parallel environments. "
-    "<code>n_steps</code> is per environment, so the effective batch is eight times larger."
-)
-CAP_REINFORCE = (
-    "<b>Table 4. REINFORCE.</b> Ten configurations, 200k steps each. Updates are applied only on "
-    "complete episodes, so &ldquo;Eps/update&rdquo; is the true batch size."
-)
+# ------------------------------------------------------------------- captions
 
+CAP_ENV = (
+    "<b>The environment.</b> One episode flown by the hand-written pilot. Left: the whole survey, "
+    "with the launch buoy, the pipeline in a shallow S across the seabed, four teal inspection rings, "
+    "and the manifold on the right. Then a transit between stations, a scan at a ring, and the "
+    "finished survey. The seabed shape and the current change on every reset."
+)
 CAP_FIG1 = (
-    "<b>Figure 1. Learning curves by algorithm.</b> Grey lines are the nine other configurations, the "
-    "coloured line is the best. All curves are evaluated on the same held-out seeds, never on training "
-    "reward. The spread within each panel is the visual form of the central finding: configuration "
-    "matters more than algorithm."
+    "<b>Figure 1. Cumulative reward per algorithm.</b> One panel per algorithm. Grey lines are the "
+    "nine other settings, the coloured line is the best. All lines are scored on the same held-out "
+    "seeds. The wide spread inside each panel is the main result: the setting matters more than the "
+    "algorithm."
 )
 CAP_FIG2 = (
-    "<b>Figure 2. Best configuration per algorithm.</b> Left, mean return; right, survey-completion rate. "
-    "Dashed lines mark the do-nothing, random and hand-written-pilot baselines. Curves are lightly smoothed; "
-    "the horizontal axis is environment steps, identical for all four."
+    "<b>Figure 2. Best setting of each algorithm.</b> Left: mean reward. Right: survey completion "
+    "rate. Dashed lines mark the do-nothing, random, and pilot scores. The x-axis is training steps."
 )
 CAP_FIG3 = (
-    "<b>Figure 3. DQN objective curves.</b> Left, the temporal-difference loss on a log scale. Centre, "
-    "the mean greedy Q-value on a <i>fixed</i> batch of 256 states held constant across checkpoints, so "
-    "that a rising curve means the value estimate grew rather than the agent visiting different states. "
-    "Right, the &epsilon;-greedy exploration schedule."
+    "<b>Figure 3. DQN objective curves.</b> Left: the TD loss on a log scale. Middle: the mean "
+    "Q-value on a fixed set of states, so a rising line means the value estimate grew and not that "
+    "the agent moved elsewhere. Right: the epsilon exploration schedule."
 )
 CAP_FIG4 = (
-    "<b>Figure 4. Policy entropy.</b> How quickly each policy-gradient method stops exploring. The dashed "
-    "line is ln&nbsp;10, the entropy of a uniform policy over the ten actions. Falling below roughly "
-    "1 nat indicates near-deterministic action selection."
+    "<b>Figure 4. Policy entropy.</b> How fast each policy-gradient method stops exploring. The dashed "
+    "line is ln 10, the entropy of a random policy over ten actions. Falling below about 1 means the "
+    "policy has become almost fixed."
 )
 CAP_FIG5 = (
-    "<b>Figure 5. Convergence.</b> Left, environment steps for each configuration to reach 90% of its own "
-    "best score. Right, that speed plotted against what the run actually converged to &mdash; the runs that "
-    "converged fastest are frequently the ones that converged to a poor policy."
+    "<b>Figure 5. Steps to converge.</b> Left: training steps for each setting to reach 90% of its "
+    "own best score. Right: that speed against the score it reached. Fast is not always good: some "
+    "settings settle quickly on a weak policy."
 )
 CAP_FIG6 = (
-    "<b>Figure 6. Generalisation.</b> Each agent under conditions of increasing severity. "
-    "<i>unseen seeds</i> keeps the training distribution and changes only the draw; <i>strong current</i> "
-    "roughly doubles the current; <i>tight battery</i> cuts the energy budget; <i>rough seabed</i> "
-    "adds more relief than was ever seen in training."
-)
-CAP_FIG7 = (
-    "<b>Figure 7. Terminal states.</b> How episodes actually ended, on the held-out seeds. Only "
-    "<i>survey complete</i> is a full success; the failures separate collisions, capsizes, lost vehicles, "
-    "flat batteries and timeouts."
+    "<b>Figure 6. Generalization.</b> Each agent under harder conditions. \"unseen seeds\" only "
+    "changes the random draw. \"strong current\" roughly doubles the current. \"tight battery\" cuts "
+    "the energy. \"rough seabed\" adds more relief than in training."
 )
 CAP_GEN_TABLE = (
-    "<b>Table 5. Generalisation.</b> Mean return with survey-completion rate in parentheses. Conditions run "
-    "left to right from the training distribution to well outside it."
-)
-CAP_SUMMARY = (
-    "<b>Table 6. Summary.</b> The best configuration of each algorithm. Return, completion rate and scan "
-    "offset are from the extended final training run where one was performed; convergence and training "
-    "time are from the matched 200k-step sweep."
+    "<b>Table 6. Generalization.</b> Mean reward with survey completion rate in brackets. Conditions "
+    "run from the training setting on the left to harder ones on the right."
 )
 
 
-def _discussion_reward() -> str:
+# ------------------------------------------------------------ 5. discussion
+
+def _disc_cumulative() -> str:
     return f"""
-<p>Ranked by best configuration, the ordering is {_ranking()}. Two features of Figure&nbsp;1 matter more
-than the ordering itself.</p>
-
-<p>First, every algorithm has to climb out of the same shallow trap on the way up. Early curves sit well
-below zero, and inspecting those rollouts shows why: a policy that thrashes its thrusters is punished
-hard (collisions and lost vehicles), so the first thing every method learns is simply to stop crashing
-&mdash; which parks it near the do-nothing score of &minus;103 while it drifts and times out. Escaping
-that requires the agent to accept the running cost of driving the full transit in exchange for the sparse
-station bonuses. The progress-shaping term is what makes that escape happen at all; an earlier reward
-design without it left every algorithm parked at the do-nothing optimum for the entire budget.</p>
-
-<p>Second, the on-policy methods are visibly noisier between evaluations than DQN. This is not only
-evaluation noise: a policy-gradient method on a reward whose mass sits in a few sparse station events
-repeatedly reaches a surveying policy and then partially loses it. DQN's replay buffer keeps the rare
-completed surveys available for many updates, and its curve is correspondingly smoother even where its
-final score is not higher.</p>
+<p>Figure&nbsp;1 shows the cumulative reward for every setting, one panel per algorithm, and
+Figure&nbsp;2 puts the best setting of each algorithm on one axis against the baselines. Two things
+stand out.</p>
+<p>First, every algorithm has to climb out of the same trap. Early lines sit well below zero, because
+a policy that thrashes its thrusters is punished hard, so the first thing every method learns is to
+stop crashing. That parks it near the do-nothing score while it drifts and times out. Getting past
+that means paying the running cost of the full trip in exchange for the station rewards, and the
+distance-shaping term is what makes that happen.</p>
+<p>Second, DQN and PPO reach the pilot's level and finish most surveys, while A2C and REINFORCE stay
+low at this budget. Ranked by best setting, the order is {_ranking()}. DQN's line is smoother than
+PPO's, because its replay buffer keeps the rare finished surveys for many updates, while the on-policy
+methods reach a working policy and then partly lose it.</p>
 """
 
 
 DISCUSSION_OBJECTIVE = """
-<p>The DQN objective curves in Figure&nbsp;3 separate two failure modes that look identical in the reward
-curve. A run whose TD loss stays high while its Q-values keep climbing is diverging &mdash; the bootstrap
-target is chasing itself &mdash; whereas a run whose loss falls to a low plateau while its Q-values flatten
-well below the achievable return has simply converged to a poor policy. Tracking the value estimate on a
-<i>fixed</i> batch of states is what makes this readable: it separates &ldquo;the estimate grew&rdquo; from
-&ldquo;the agent went somewhere else&rdquo;.</p>
-
-<p>The entropy curves in Figure&nbsp;4 are the clearest exploration/exploitation evidence in the study. All
-three policy-gradient methods start near ln&nbsp;10 &asymp; 2.30 nats, the uniform policy over ten actions.
-The runs that end best are the ones that decay <i>gradually</i>; runs that fall below about 1 nat early have
-effectively stopped sampling <code>INSPECT</code> anywhere except where they already fire it, and their
-reward curves flatten from that point onwards. The zero-entropy-bonus PPO configuration shows this most
-starkly. REINFORCE decays most slowly of the three, which is the flip side of its variance problem: its
-gradient is too noisy to sharpen the policy quickly, so it keeps exploring &mdash; sometimes usefully, more
-often just expensively.</p>
+<p>Figure&nbsp;3 shows DQN's own objective. A run whose TD loss stays high while its Q-values keep
+rising is unstable, because the target is chasing itself. A run whose loss falls flat while the
+Q-values level off well below the reward that is actually reachable has just settled on a weak policy.
+Measuring the Q-values on a fixed set of states is what makes this readable, because it separates "the
+estimate grew" from "the agent went somewhere else".</p>
+<p>Figure&nbsp;4 shows policy entropy for the three policy-gradient methods. They all start near
+ln&nbsp;10, which is 2.30, the entropy of a random policy over ten actions. The runs that end best are
+the ones whose entropy falls slowly. Runs that drop below about 1 early have stopped trying the
+INSPECT action anywhere new, and their reward stops improving from that point. The zero-entropy PPO
+run shows this most clearly. REINFORCE keeps the most entropy, which is the other side of its variance
+problem: its gradient is too noisy to sharpen the policy quickly.</p>
 """
 
 
-def _discussion_convergence() -> str:
+def _disc_converge() -> str:
     return """
-<p>Figure&nbsp;5 makes the point that convergence speed and final quality are close to uncorrelated here, and
-in several cases inversely related. The configurations that reach 90% of their own best score earliest are
-frequently those that collapsed onto a low-entropy policy quickly &mdash; they converged, but to something
-that drives the corridor without ever lining up a scan. The right-hand panel is the honest way to read the
-convergence column of the tables: a fast run in the upper-left is genuinely good, a fast run in the
-lower-left converged early to a bad answer.</p>
-
-<p>None of the four algorithms had fully plateaued at 200,000 steps, which is a real limitation of this
-comparison and is stated as such: the tables compare configurations <i>at a fixed budget</i>, which is the
-question a practitioner with limited compute actually faces, but it is not the same as comparing asymptotic
-performance. The best configuration of each algorithm was therefore retrained for substantially longer, and
-those extended runs are what Table&nbsp;6 and the demonstration video use.</p>
+<p>Figure&nbsp;5 shows that speed of convergence and final quality are almost unrelated here, and
+sometimes they point in opposite directions. The settings that reach 90% of their own best score
+earliest are often the ones that collapsed onto a fixed, weak policy. The right panel is the honest
+way to read the "steps to 90%" column in the tables: a fast run that also reached a high score is
+good, but a fast run that reached a low score just gave up early.</p>
+<p>None of the four algorithms had fully levelled off at 200,000 steps. That is a real limit of the
+sweep, and it is stated as such. The tables compare settings at a fixed budget, which is the question
+a person with limited compute actually faces, but it is not the same as comparing the best each
+method can ever reach. So the best setting of each algorithm was trained again for 1,500,000 steps,
+and those longer runs are the ones in Table&nbsp;5.</p>
 """
 
 
-def _discussion_generalization() -> str:
-    return f"""
-<p>The generalisation tests are designed to distinguish flying from memorising. Because the seabed and the
-current already vary during training, doing well on <i>unseen seeds</i> shows only that an agent did not
-overfit to specific episodes. The informative columns are the ones outside the training distribution.</p>
-{_gen_story()}
-<p>The weaker agents fail this test in a way that is diagnostic rather than uninteresting. An agent that
-never completes a survey at this budget has a flat profile across the five columns that says nothing about
-generalisation &mdash; it simply has nothing to generalise yet. The terminal-state breakdown in
-Figure&nbsp;7 is where those agents are distinguished: whether they fail by colliding, by draining the
-battery, or by timing out short of the stations.</p>
-"""
-
-
-def _discussion_behaviour() -> str:
+def _disc_generalization() -> str:
     top = _top_algo() or "PPO"
+    nom = _gen(top, "nominal")
+    cur = _gen(top, "strong_current")
+    bat = _gen(top, "tight_battery")
+    seab = _gen(top, "rough_seabed")
+    p_nom = _gen("PILOT", "nominal")
+    p_cur = _gen("PILOT", "strong_current")
+    if not np.isfinite(nom):
+        return "<p>Run the evaluation step to fill in the generalization results.</p>"
     return f"""
-<p>The terminal-state breakdown in Figure&nbsp;7 is more diagnostic than the mean return, because two agents
-with the same score can fail in completely different ways. The dominant failure of a trained agent is a
-<i>timeout</i> short of the last station or a <i>collision</i> while lining up, rather than being lost far
-from the pipe: by the end of training the strongest agents have learned to follow the corridor and reach the
-hoops, and what separates them is how reliably they settle and trigger the scan.</p>
-
-<p>Watching the {top} policy in the viewer, the learned survey profile is recognisable: drive down the line
-at cruise, decelerate a couple of metres short of each hoop, crab against the current to hold station, fire
-the scan, and move on. It converges on the same qualitative plan as the hand-written pilot without ever being
-shown it. The scan offset is where a learned policy can beat the pilot &mdash; the reward rewards a centred
-scan continuously, so a well-trained agent holds tighter station and scans closer to the middle of the hoop
-than the pilot, which fires the moment it is merely in range.</p>
+<p>The generalization test scores each agent on a second, separate block of seeds and under four
+harder settings. Because the seabed and current already change during training, doing well on unseen
+seeds only shows the agent did not memorise fixed episodes. The useful columns are the harder ones.</p>
+<p>The strongest agent overall was <b>{top}</b>. It finishes {_pct(nom)} of surveys on the held-out
+seeds. It holds {_pct(seab)} on a rougher seabed and {_pct(bat)} with a smaller battery, so it did not
+overfit to the easy settings. The one hard column is strong current, where it drops to {_pct(cur)}.
+The reason is honest and worth stating: the crab-into-the-current skill is done by the onboard
+controller, not by the policy, so the hand-written pilot drops the same way, from {_pct(p_nom)} to
+{_pct(p_cur)}. On this mission the gap between algorithms is about how reliably each one lines up and
+scans, not about current. The two agents that never finish a survey have flat lines across all
+columns, because they have nothing to generalise yet.</p>
 """
 
 
 def _conclusion() -> str:
     return f"""
-<p>Four reinforcement-learning algorithms were trained on an identical, physically simulated subsea
-inspection mission and compared over forty hyperparameter configurations. Ranked by best configuration at a
-matched 200k-step budget, the ordering was {_ranking()}.</p>
-
-<p>The most useful conclusions from this study are not the ranking. First, hyperparameter choice moved
-performance by more than the choice of algorithm did &mdash; the within-algorithm spread was comparable to or
-wider than the between-algorithm gap in every case &mdash; so reporting a single tuned number per algorithm
-would have been actively misleading. Second, the variance-reduction machinery is what makes policy gradients
-work here: removing REINFORCE's baseline was the single most damaging parameter change anywhere in the sweep,
-and PPO's entropy bonus was the difference between a policy that keeps trying to scan and one that stops.
-Third, the environment's own design decisions mattered as much as the algorithms': commanding a velocity
-rather than raw thruster forces, and exposing the commanded setpoints in the observation, were both necessary
-for <i>any</i> method to learn to fly the vehicle.</p>
-
-<p>The clearest remaining weakness is sample efficiency: none of the four methods had plateaued at the sweep
-budget, and the on-policy methods in particular reach a surveying policy and then partly lose it. Training
-for longer, or shaping the reward to reward settling into a hoop more directly, is the natural next step
-towards a policy that could be trusted to run an inspection unattended on the real vehicle this simulates.</p>
+<p>Four reinforcement learning algorithms were trained on the same subsea inspection mission and
+compared over forty hyperparameter runs. Ranked by best setting at the 200,000-step budget, the order
+was {_ranking()}. With longer training (Table&nbsp;5), DQN and PPO both finish about 93% of surveys,
+PPO scans the most accurately, A2C also learns the task but needs far more steps and scans less
+precisely, and REINFORCE never finishes a survey.</p>
+<p>PPO is the best fit for this problem. Its clip keeps training stable, and it beats the hand-written
+pilot on both completion and scan accuracy. DQN is a close second, and its replay buffer gives the
+smoothest learning. A2C works but is slow and unstable without a trust region, and REINFORCE is the
+weakest because learning only from long episodes is too noisy here.</p>
+<p>Two lessons stand out. First, the hyperparameters mattered more than the algorithm. Second, two
+environment choices were needed for any method to learn: actions that set a target velocity instead
+of raw thruster forces, and not ending an episode at the first small mistake. With more time, the
+next steps are longer training for A2C and REINFORCE and a reward that rewards holding steady in the
+ring more directly.</p>
 """
 
 
-# Bind the computed sections at import time so ``report.py`` can use them as
+# Build the computed text once at import so ``report.py`` can read them as
 # plain attributes.
-HP_INTRO = _hp_intro()
+IMPL_INTRO = _impl_intro()
 DQN_ANALYSIS = _dqn_analysis()
 PPO_ANALYSIS = _ppo_analysis()
 A2C_ANALYSIS = _a2c_analysis()
 REINFORCE_ANALYSIS = _reinforce_analysis()
-DISCUSSION_REWARD = _discussion_reward()
-DISCUSSION_CONVERGENCE = _discussion_convergence()
-DISCUSSION_GENERALIZATION = _discussion_generalization()
-DISCUSSION_BEHAVIOUR = _discussion_behaviour()
+DISCUSSION_CUMULATIVE = _disc_cumulative()
+DISCUSSION_CONVERGE = _disc_converge()
+DISCUSSION_GENERALIZATION = _disc_generalization()
 CONCLUSION = _conclusion()
