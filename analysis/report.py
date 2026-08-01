@@ -259,12 +259,12 @@ table.layout > tbody > tr > td { border: none; padding: 0; }
 .pagehead .bse { font-size: 19pt; font-weight: bold; color: #808080; margin: .3mm 0; }
 .pagehead .s   { font-size: 10.5pt; color: #a6a6a6; line-height: 1.25; }
 
-h1 { font-size: 12pt; font-weight: bold; margin: 0 0 3mm; }
-h2 { font-size: 12pt; font-weight: bold; margin: 5mm 0 2mm; }
-h3 { font-size: 11pt; font-weight: bold; margin: 3.5mm 0 1.5mm; padding-left: 6mm; }
-p  { margin: 0 0 2.4mm; text-align: justify; }
-ol, ul { margin: 0 0 2.4mm; padding-left: 8mm; }
-li { margin-bottom: .8mm; }
+h1 { font-size: 12pt; font-weight: bold; margin: 0 0 2.5mm; }
+h2 { font-size: 12pt; font-weight: bold; margin: 3.8mm 0 1.5mm; }
+h3 { font-size: 11pt; font-weight: bold; margin: 2.8mm 0 1.1mm; padding-left: 6mm; }
+p  { margin: 0 0 2mm; text-align: justify; }
+ol, ul { margin: 0 0 2mm; padding-left: 8mm; }
+li { margin-bottom: .7mm; }
 sup { font-size: 7.5pt; }
 
 .meta { margin: 0 0 4mm; }
@@ -283,11 +283,13 @@ table.grid tr.best td { font-weight: bold; background: #e9e9e9; }
 table.grid.obs th { text-align: center; font-style: italic; }
 table.grid.gen { font-size: 9pt; }
 
-figure { margin: 1.6mm 0 2mm; page-break-inside: avoid; text-align: center; }
-figure img { width: 100%; max-height: 62mm; object-fit: contain; display: block; }
-figure.env img { max-height: 74mm; }
-figcaption { font-size: 8.8pt; color: #000; margin-top: 1mm; text-align: left; line-height: 1.26; }
+figure { margin: 1.2mm 0 1.6mm; page-break-inside: avoid; text-align: center; }
+figure img { width: 100%; max-height: 52mm; object-fit: contain; display: block; }
+figure.env img { max-height: 68mm; }
+figcaption { font-size: 8.6pt; color: #000; margin-top: 0.7mm; text-align: left; line-height: 1.22; }
 
+ol.refs { padding-left: 7mm; font-size: 9pt; line-height: 1.25; }
+ol.refs li { margin-bottom: 0.7mm; text-align: left; }
 .caption { font-size: 9pt; margin: -1mm 0 2.5mm; }
 .missing { color: #b00; font-style: italic; }
 code { font-family: "Courier New", monospace; font-size: 9.5pt; }
@@ -375,7 +377,6 @@ Held fixed: value coefficient 0.5, gradient clip 0.5.</p>
 <h2>5. Results Discussion</h2>
 <h3>a. Cumulative Rewards</h3>
 {figure("fig01_learning_curves.png", T.CAP_FIG1)}
-{figure("fig02_algorithm_comparison.png", T.CAP_FIG2)}
 {T.DISCUSSION_CUMULATIVE}
 {figure("fig03_dqn_objective.png", T.CAP_FIG3)}
 {figure("fig04_pg_entropy.png", T.CAP_FIG4)}
@@ -396,6 +397,9 @@ again for 800,000 steps and scored on the held-out seeds.</p>
 
 <h2>6. Conclusion and Discussion</h2>
 {T.CONCLUSION}
+
+<h2>References</h2>
+{T.REFERENCES}
 
 </td></tr></tbody></table>
 </body></html>

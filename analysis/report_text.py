@@ -382,22 +382,22 @@ CAP_FIG2 = (
     "rate. Dashed lines mark the do-nothing, random, and pilot scores. The x-axis is training steps."
 )
 CAP_FIG3 = (
-    "<b>Figure 3. DQN objective curves.</b> Left: the TD loss on a log scale. Middle: the mean "
+    "<b>Figure 2. DQN objective curves.</b> Left: the TD loss on a log scale. Middle: the mean "
     "Q-value on a fixed set of states, so a rising line means the value estimate grew and not that "
     "the agent moved elsewhere. Right: the epsilon exploration schedule."
 )
 CAP_FIG4 = (
-    "<b>Figure 4. Policy entropy.</b> How fast each policy-gradient method stops exploring. The dashed "
+    "<b>Figure 3. Policy entropy.</b> How fast each policy-gradient method stops exploring. The dashed "
     "line is ln 10, the entropy of a random policy over ten actions. Falling below about 1 means the "
     "policy has become almost fixed."
 )
 CAP_FIG5 = (
-    "<b>Figure 5. Steps to converge.</b> Left: training steps for each setting to reach 90% of its "
+    "<b>Figure 4. Steps to converge.</b> Left: training steps for each setting to reach 90% of its "
     "own best score. Right: that speed against the score it reached. Fast is not always good: some "
     "settings settle quickly on a weak policy."
 )
 CAP_FIG6 = (
-    "<b>Figure 6. Generalization.</b> Each agent under harder conditions. \"unseen seeds\" only "
+    "<b>Figure 5. Generalization.</b> Each agent under harder conditions. \"unseen seeds\" only "
     "changes the random draw. \"strong current\" roughly doubles the current. \"tight battery\" cuts "
     "the energy. \"rough seabed\" adds more relief than in training."
 )
@@ -411,9 +411,8 @@ CAP_GEN_TABLE = (
 
 def _disc_cumulative() -> str:
     return f"""
-<p>Figure&nbsp;1 shows the cumulative reward for every setting, one panel per algorithm, and
-Figure&nbsp;2 puts the best setting of each algorithm on one axis against the baselines. Two things
-stand out.</p>
+<p>Figure&nbsp;1 shows the cumulative reward for every setting, one panel per algorithm, scored on the
+held-out seeds against the do-nothing, random, and pilot baselines. Two things stand out.</p>
 <p>First, every algorithm has to climb out of the same trap. Early lines sit well below zero, because
 a policy that thrashes its thrusters is punished hard, so the first thing every method learns is to
 stop crashing. That parks it near the do-nothing score while it drifts and times out. Getting past
@@ -427,12 +426,12 @@ methods reach a working policy and then partly lose it.</p>
 
 
 DISCUSSION_OBJECTIVE = """
-<p>Figure&nbsp;3 shows DQN's own objective. A run whose TD loss stays high while its Q-values keep
+<p>Figure&nbsp;2 shows DQN's own objective. A run whose TD loss stays high while its Q-values keep
 rising is unstable, because the target is chasing itself. A run whose loss falls flat while the
 Q-values level off well below the reward that is actually reachable has just settled on a weak policy.
 Measuring the Q-values on a fixed set of states is what makes this readable, because it separates "the
 estimate grew" from "the agent went somewhere else".</p>
-<p>Figure&nbsp;4 shows policy entropy for the three policy-gradient methods. They all start near
+<p>Figure&nbsp;3 shows policy entropy for the three policy-gradient methods. They all start near
 ln&nbsp;10, which is 2.30, the entropy of a random policy over ten actions. The runs that end best are
 the ones whose entropy falls slowly. Runs that drop below about 1 early have stopped trying the
 INSPECT action anywhere new, and their reward stops improving from that point. The zero-entropy PPO
@@ -443,7 +442,7 @@ problem: its gradient is too noisy to sharpen the policy quickly.</p>
 
 def _disc_converge() -> str:
     return """
-<p>Figure&nbsp;5 shows that speed of convergence and final quality are almost unrelated here, and
+<p>Figure&nbsp;4 shows that speed of convergence and final quality are almost unrelated here, and
 sometimes they point in opposite directions. The settings that reach 90% of their own best score
 earliest are often the ones that collapsed onto a fixed, weak policy. The right panel is the honest
 way to read the "steps to 90%" column in the tables: a fast run that also reached a high score is
@@ -473,11 +472,9 @@ seeds only shows the agent did not memorise fixed episodes. The useful columns a
 <p>The strongest agent overall was <b>{top}</b>. It finishes {_pct(nom)} of surveys on the held-out
 seeds. It holds {_pct(seab)} on a rougher seabed and {_pct(bat)} with a smaller battery, so it did not
 overfit to the easy settings. The one hard column is strong current, where it drops to {_pct(cur)}.
-That is the hardest column for every method, learned or scripted, because holding station against a
-strong current is a lot of what makes the scan hard: the hand-written pilot drops the same way, from
-{_pct(p_nom)} to {_pct(p_cur)}, and the learned agent actually holds up a little better. The two agents
-that never finish a survey have flat lines across all columns, because they have nothing to generalise
-yet.</p>
+That is the hardest column for every method: the hand-written pilot drops the same way, from
+{_pct(p_nom)} to {_pct(p_cur)}, so holding station against a strong current is much of what makes the
+scan hard, and the learned agent holds up a little better.</p>
 """
 
 
@@ -494,15 +491,39 @@ was {_ranking()}. With the longer final runs (Table&nbsp;5), PPO finishes {_fp('
 DQN {_fp('DQN')}, with PPO scanning the most accurately. A2C ({_fp('A2C')}) and REINFORCE
 ({_fp('REINFORCE')}) do not complete a survey even at the extended budget: A2C would need far more
 steps, and REINFORCE's high variance stops it sharpening the policy in time.</p>
-<p>PPO is the best fit for this problem. Its clip keeps training stable, and it beats the hand-written
-pilot on both completion and scan accuracy. DQN is a close second, and its replay buffer gives the
-smoothest learning. A2C works but is slow and unstable without a trust region, and REINFORCE is the
-weakest because learning only from long episodes is too noisy here.</p>
-<p>Two lessons stand out. First, the hyperparameters mattered more than the algorithm. Second, two
+<p>PPO is the best fit for this problem: its clip keeps training stable, and it beats the hand-written
+pilot on both completion and scan accuracy, with DQN a close second thanks to its replay buffer.
+Two lessons stand out. First, the hyperparameters mattered more than the algorithm. Second, two
 environment choices were needed for any method to learn: actions that set a target velocity instead
 of raw thruster forces, and not ending an episode at the first small mistake. With more time, the
 next steps are longer training for A2C and REINFORCE and a reward that rewards holding steady in the
 ring more directly.</p>
+"""
+
+
+REFERENCES = """
+<ol class="refs">
+<li>Todorov, E., Erez, T. and Tassa, Y. (2012) 'MuJoCo: A physics engine for model-based control',
+IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS), pp. 5026-5033.</li>
+<li>Towers, M. et al. (2023) Gymnasium. Farama Foundation. Available at: https://gymnasium.farama.org
+(Accessed: July 2026).</li>
+<li>Raffin, A. et al. (2021) 'Stable-Baselines3: Reliable reinforcement learning implementations',
+Journal of Machine Learning Research, 22(268), pp. 1-8.</li>
+<li>Mnih, V. et al. (2015) 'Human-level control through deep reinforcement learning', Nature,
+518(7540), pp. 529-533. (DQN.)</li>
+<li>Schulman, J. et al. (2017) 'Proximal policy optimization algorithms', arXiv:1707.06347. (PPO.)</li>
+<li>Mnih, V. et al. (2016) 'Asynchronous methods for deep reinforcement learning', International
+Conference on Machine Learning (ICML), pp. 1928-1937. (A2C / A3C.)</li>
+<li>Williams, R.J. (1992) 'Simple statistical gradient-following algorithms for connectionist
+reinforcement learning', Machine Learning, 8, pp. 229-256. (REINFORCE.)</li>
+<li>Schulman, J. et al. (2016) 'High-dimensional continuous control using generalized advantage
+estimation', International Conference on Learning Representations (ICLR).</li>
+<li>Lillicrap, T.P. et al. (2016) 'Continuous control with deep reinforcement learning', ICLR. (Source
+of the Ornstein-Uhlenbeck process used here for the water-current field.)</li>
+<li>Paszke, A. et al. (2019) 'PyTorch: An imperative style, high-performance deep learning library',
+Advances in Neural Information Processing Systems (NeurIPS), pp. 8024-8035.</li>
+<li>three.js (2024) JavaScript 3D library. Available at: https://threejs.org (Accessed: July 2026).</li>
+</ol>
 """
 
 
