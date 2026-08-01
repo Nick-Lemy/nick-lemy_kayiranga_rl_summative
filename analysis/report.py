@@ -318,8 +318,8 @@ def build() -> Path:
 <h1>Reinforcement Learning Summative Assignment Report</h1>
 <div class="meta">
   <div><b>Student Name:</b> Nick Lemy Kayiranga</div>
-  <div><b>Video Recording:</b> [add your video link here, 3 minutes max, camera on, share the entire screen]</div>
-  <div><b>GitHub Repository:</b> https://github.com/&lt;your-username&gt;/nick-lemy_kayiranga_rl_summative</div>
+  <div><b>Video Recording:</b> https://vimeo.com/1214879122?share=copy&amp;fl=sv&amp;fe=ci</div>
+  <div><b>GitHub Repository:</b> https://github.com/Nick-Lemy/nick-lemy_kayiranga_rl_summative</div>
 </div>
 
 <h2>1. Project Overview</h2>
