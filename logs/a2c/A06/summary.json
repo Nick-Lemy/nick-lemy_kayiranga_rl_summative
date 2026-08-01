@@ -12,14 +12,14 @@
     "use_rms_prop": true,
     "normalize_advantage": false,
     "timesteps": 200000,
-    "mean_return": -75.32,
-    "std_return": 56.42,
+    "mean_return": -110.57,
+    "std_return": 184.0,
     "success_rate": 0.0,
-    "mean_miss": 2.533,
-    "flight_time": 55.0,
-    "battery_left": 0.836,
-    "convergence_step": 140000,
-    "wall_time_s": 195.8
+    "mean_miss": 2.534,
+    "flight_time": 62.0,
+    "battery_left": 0.832,
+    "convergence_step": 160000,
+    "wall_time_s": 195.9
   },
   "outcomes": {
     "timeout": 30

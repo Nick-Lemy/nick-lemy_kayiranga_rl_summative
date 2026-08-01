@@ -1,8 +1,8 @@
-# Subsea Inspection ROV — Mission-Based Reinforcement Learning
+# Subsea Inspection ROV - Mission-Based Reinforcement Learning
 
 An autonomous underwater vehicle (ROV) has to set out from a launch buoy, follow a
-pipeline that snakes across the seabed, and inspect four stations spaced along it —
-in order — by holding station inside each inspection hoop against a drifting current
+pipeline that snakes across the seabed, and inspect four stations spaced along it -
+in order - by holding station inside each inspection hoop against a drifting current
 and triggering a sensor scan, all before the battery runs flat and without driving
 into the seabed, the pipe or the manifold.
 
@@ -11,7 +11,7 @@ and **REINFORCE**, **PPO** and **A2C** (policy-gradient).
 
 Simulated in **MuJoCo** with real rigid-body physics: near-neutral buoyancy, quadratic
 hydrodynamic drag, a procedurally generated seabed heightfield, and an
-Ornstein–Uhlenbeck current field, with every force (thrust, buoyancy, drag, current)
+Ornstein-Uhlenbeck current field, with every force (thrust, buoyancy, drag, current)
 applied through the body's external-force channel.
 
 ![The mission](assets/figures/env_overview.png)
@@ -31,7 +31,7 @@ and torch to the CPU wheels, so this stays a few hundred MB rather than pulling 
 whole CUDA stack). `uv run main.py` opens the interactive 3D simulation flying the
 best trained agent.
 
-No other setup is needed — no manual venv, no `pip install`.
+No other setup is needed - no manual venv, no `pip install`.
 
 ### Everything else
 
@@ -51,7 +51,7 @@ No other setup is needed — no manual venv, no `pip install`.
 `uv run python play.py --algo dqn --render` works directly too.
 
 The viewer plays back at **real time** by default: one second of simulated time takes
-one second of wall clock, so a full survey runs about 45–55 s. `--speed 0.5` gives
+one second of wall clock, so a full survey runs about 45-55 s. `--speed 0.5` gives
 slow motion and `--speed 3` skips ahead, on both `demo` and `play`.
 
 ---
@@ -61,8 +61,8 @@ slow motion and `--speed 3` skips ahead, on both `demo` and `play`.
 ### Why it is not a grid world
 
 The directional actions do **not** move the vehicle. They nudge the setpoints of an
-onboard velocity/heading controller, which — together with buoyancy, quadratic drag
-and the current — is summed into the body's external-force channel and integrated by
+onboard velocity/heading controller, which - together with buoyancy, quadratic drag
+and the current - is summed into the body's external-force channel and integrated by
 MuJoCo. A bad sequence of actions genuinely lets the current sweep the vehicle off the
 line or drives it into the seabed.
 
@@ -70,12 +70,12 @@ Two design decisions came out of actually flying it (see `tests/scripted_pilot.p
 
 - **The actions command velocities, not raw thruster forces.** Commanding a velocity
   means the onboard controller automatically leans into the current to hold it, so
-  station-keeping falls out of the physics rather than having to be scripted — and a
+  station-keeping falls out of the physics rather than having to be scripted - and a
   10 Hz discrete policy can fly the vehicle smoothly.
 - **The commanded setpoints are part of the observation.** Because the actions edit
   persistent state, omitting them would make the problem non-Markovian.
 
-### Action space — `Discrete(10)`
+### Action space - `Discrete(10)`
 
 | # | Action | Real-world meaning |
 |---|---|---|
@@ -88,14 +88,14 @@ Two design decisions came out of actually flying it (see `tests/scripted_pilot.p
 | 6 | `STRAFE_RIGHT` | translate to starboard |
 | 7 | `ASCEND` | rise |
 | 8 | `DESCEND` | dive |
-| 9 | `INSPECT` | fire the sensor scan — the mission-critical act |
+| 9 | `INSPECT` | capture a scan after holding station in the ring (the mission-critical act) |
 
-### Observation space — `Box(28,)`
+### Observation space - `Box(28,)`
 
 Position error and velocity to the active station in the yaw-aligned frame, the
 body-frame up-vector (attitude), heading, body rates, battery, survey progress, the
 onboard current estimate, altitude above the seabed, range to the station, clock
-remaining, vertical speed, pipeline-corridor margin, an in-scan-range flag, and the
+remaining, vertical speed, pipeline-corridor margin, a scan-state signal, and the
 four commanded setpoints. Run `uv run main.py env-info` for the exact index map.
 
 ### Reward
@@ -103,18 +103,18 @@ four commanded setpoints. Run `uv run main.py env-info` for the exact index map.
 | Term | Value |
 |---|---|
 | Progress towards the active station | **+1.3** per metre closed |
-| Clean inspection scan | **+60 · exp(−(offset/2.8)²)** |
-| Scan inside the 2.8 m hoop | **+30** |
+| Holding station in the ring (under 0.6 m/s) | **+0.6** per step, up to the 0.8 s dwell |
+| Captured scan (after the hold) | **+60 * exp(-(offset/2.8)^2)** plus **+30** inside the ring |
+| Deliberate `INSPECT` at a ready scan | **+8** |
 | Full survey completed | **+120** |
-| `INSPECT` with no station in range | **−1** |
-| Time / energy / tilt / spin | −0.05 / −0.04 / −0.2 / −0.02 per step |
+| Time / energy / tilt / spin | -0.05 / -0.04 / -0.2 / -0.02 per step |
 | Off-pipeline / seabed proximity | shaped penalties |
-| Collision, capsize, lost, flat battery | **−50 to −55** each |
-| Ran out of time | **−12** per un-inspected station |
+| Collision, capsize, lost, flat battery | **-50 to -55** each |
+| Ran out of time | **-12** per un-inspected station |
 
 ### Start state and termination
 
-Launch from the buoy at the near end of the pipeline with 85–100% battery and
+Launch from the buoy at the near end of the pipeline with 85-100% battery and
 near-neutral buoyancy. Every reset draws a **fresh procedural seabed and a fresh
 current field**, which is what the generalisation test exploits.
 
@@ -128,13 +128,13 @@ compared against:
 
 | Policy | Mean return | Surveys complete |
 |---|---|---|
-| Uniform random | −383.7 | 0% |
-| Do nothing (`HOLD` forever) | −191.0 | 0% |
+| Uniform random | -383.7 | 0% |
+| Do nothing (`HOLD` forever) | -191.0 | 0% |
 | Hand-written pilot (`tests/scripted_pilot.py`) | +468.2 | 90% |
 
 Random is *worse* than doing nothing here: thrashing the thrusters drives the vehicle
 into the seabed or out of the box and collects the terminal penalties, whereas holding
-station merely drifts and times out — a shallow local optimum the learned agents have
+station merely drifts and times out - a shallow local optimum the learned agents have
 to climb out of.
 
 ---
@@ -144,7 +144,7 @@ to climb out of.
 Episodes serialise to a self-contained JSON document and replay in the browser, which
 is what an operations dashboard would do against a `GET /episodes/:id` endpoint. The
 page rebuilds the seabed, pipeline, hoops, manifold and the vehicle from the JSON alone
-— it knows nothing about MuJoCo.
+- it knows nothing about MuJoCo.
 
 ```bash
 uv run main.py export-trace          # writes viewer/episode.json
@@ -203,7 +203,7 @@ uv run main.py train --algo a2c
 uv run main.py train --algo reinforce
 uv run main.py train --algo dqn
 
-uv run main.py train --algo ppo --final  # retrain the winner for 1.5M steps
+uv run main.py train --algo ppo --final  # retrain the winner for 800k steps
 uv run main.py evaluate                  # scores + generalisation
 uv run main.py plots                     # figures
 ```
@@ -220,11 +220,11 @@ Results land in `logs/results/*_sweep.csv` (the hyperparameter tables),
 
 ## Notes
 
-- Training runs on CPU by design — the policies are small MLPs and the environment is
+- Training runs on CPU by design - the policies are small MLPs and the environment is
   the bottleneck. `torch.set_num_threads(1)` measured ~1.9× faster end-to-end than the
   default, because torch's thread pool otherwise fights the environment workers.
 - The MuJoCo scene regenerates its seabed heightfield on every reset; both renderers
   re-upload it to the GPU, or the render would show relief the physics is no longer
   using.
 
-**Nick Lemy Kayiranga** — n.kayiranga@alustudent.com
+**Nick Lemy Kayiranga** - n.kayiranga@alustudent.com

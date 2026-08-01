@@ -16,17 +16,18 @@
     "exploration_final_eps": 0.05,
     "max_grad_norm": 10.0,
     "timesteps": 200000,
-    "mean_return": 25.21,
-    "std_return": 34.5,
-    "success_rate": 0.0,
-    "mean_miss": 1.559,
-    "flight_time": 26.75,
-    "battery_left": 0.821,
-    "convergence_step": 80000,
-    "wall_time_s": 433.9
+    "mean_return": 174.37,
+    "std_return": 176.97,
+    "success_rate": 0.5333,
+    "mean_miss": 4.471,
+    "flight_time": 49.43,
+    "battery_left": 0.737,
+    "convergence_step": 50000,
+    "wall_time_s": 348.2
   },
   "outcomes": {
-    "capsized": 21,
+    "capsized": 5,
+    "survey_complete": 16,
     "timeout": 9
   }
 }

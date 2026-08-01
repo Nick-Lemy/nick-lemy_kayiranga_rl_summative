@@ -283,10 +283,10 @@ table.grid tr.best td { font-weight: bold; background: #e9e9e9; }
 table.grid.obs th { text-align: center; font-style: italic; }
 table.grid.gen { font-size: 9pt; }
 
-figure { margin: 2mm 0 2.5mm; page-break-inside: avoid; text-align: center; }
-figure img { width: 100%; max-height: 68mm; object-fit: contain; display: block; }
-figure.env img { max-height: 78mm; }
-figcaption { font-size: 9pt; color: #000; margin-top: 1mm; text-align: left; line-height: 1.28; }
+figure { margin: 1.6mm 0 2mm; page-break-inside: avoid; text-align: center; }
+figure img { width: 100%; max-height: 62mm; object-fit: contain; display: block; }
+figure.env img { max-height: 74mm; }
+figcaption { font-size: 8.8pt; color: #000; margin-top: 1mm; text-align: left; line-height: 1.26; }
 
 .caption { font-size: 9pt; margin: -1mm 0 2.5mm; }
 .missing { color: #b00; font-style: italic; }
@@ -386,7 +386,7 @@ Held fixed: value coefficient 0.5, gradient clip 0.5.</p>
 {T.DISCUSSION_CONVERGE}
 {summary_table()}
 <p class="caption"><b>Table 5. Longer final runs.</b> The best setting of each algorithm, trained
-again for 1,500,000 steps and scored on the held-out seeds.</p>
+again for 800,000 steps and scored on the held-out seeds.</p>
 
 <h3>c. Generalization</h3>
 {generalization_table()}

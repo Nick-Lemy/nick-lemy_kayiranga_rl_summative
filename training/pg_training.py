@@ -32,7 +32,7 @@ from stable_baselines3 import A2C, PPO
 from training.common import RunSpec, print_header, run_reinforce, run_sb3
 
 SWEEP_STEPS = 200_000
-FINAL_STEPS = 1_500_000
+FINAL_STEPS = 800_000
 N_ENVS = 8
 
 

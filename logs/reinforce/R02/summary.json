@@ -10,16 +10,17 @@
     "ent_coef": 0.01,
     "max_grad_norm": 0.5,
     "timesteps": 200000,
-    "mean_return": -144.41,
-    "std_return": 161.54,
+    "mean_return": -190.97,
+    "std_return": 251.63,
     "success_rate": 0.0,
-    "mean_miss": NaN,
-    "flight_time": 55.0,
-    "battery_left": 0.885,
-    "convergence_step": 30000,
-    "wall_time_s": 142.8
+    "mean_miss": 2.709,
+    "flight_time": 61.95,
+    "battery_left": 0.879,
+    "convergence_step": 50000,
+    "wall_time_s": 132.5
   },
   "outcomes": {
-    "timeout": 30
+    "lost": 1,
+    "timeout": 29
   }
 }

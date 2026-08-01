@@ -12,18 +12,16 @@
     "use_rms_prop": false,
     "normalize_advantage": false,
     "timesteps": 200000,
-    "mean_return": -535.91,
-    "std_return": 301.76,
+    "mean_return": -154.21,
+    "std_return": 151.13,
     "success_rate": 0.0,
-    "mean_miss": 2.744,
-    "flight_time": 45.6,
-    "battery_left": 0.706,
-    "convergence_step": 20000,
-    "wall_time_s": 179.2
+    "mean_miss": 2.709,
+    "flight_time": 62.0,
+    "battery_left": 0.875,
+    "convergence_step": 140000,
+    "wall_time_s": 191.9
   },
   "outcomes": {
-    "capsized": 2,
-    "lost": 15,
-    "timeout": 13
+    "timeout": 30
   }
 }

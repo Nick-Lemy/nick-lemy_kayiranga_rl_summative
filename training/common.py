@@ -380,7 +380,7 @@ def run_sb3(
     from stable_baselines3.common.logger import configure
 
     log_dir, model_dir = spec.dirs()
-    eval_every = eval_every or max(spec.total_timesteps // 20, 2_000)
+    eval_every = eval_every or max(spec.total_timesteps // 12, 2_000)
 
     env = make_vec_env(spec.n_envs, seed=spec.seed, config=config)
     try:
@@ -436,7 +436,7 @@ def run_reinforce(
     from training.reinforce import REINFORCE
 
     log_dir, model_dir = spec.dirs()
-    eval_every = eval_every or max(spec.total_timesteps // 20, 2_000)
+    eval_every = eval_every or max(spec.total_timesteps // 12, 2_000)
 
     env = make_vec_env(spec.n_envs, seed=spec.seed, config=config)
     try:

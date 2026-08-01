@@ -38,7 +38,7 @@ from training.common import RunSpec, print_header, run_sb3
 #: enough that forty runs fit in a sitting; the best configuration is then
 #: retrained for longer in ``final``.
 SWEEP_STEPS = 200_000
-FINAL_STEPS = 1_500_000
+FINAL_STEPS = 800_000
 N_ENVS = 4
 
 

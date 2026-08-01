@@ -334,12 +334,18 @@ def _a2c_analysis() -> str:
     b = _best("A2C")
     if not b:
         return '<p class="missing">A2C runs not done yet.</p>'
+    f = _final("A2C")
+    final_line = ""
+    if f:
+        final_line = (
+            f" Even the longer 800,000-step final run reached only {_pct(_num(f, 'success_rate'))} "
+            f"survey completion, which shows A2C needs far more training than PPO or DQN to hold "
+            f"station reliably on this task."
+        )
     return f"""
 <p>For A2C, {_summary('A2C')}. A2C has no clip on the update, so it is far more sensitive to the step
 size than PPO. At the 200,000-step budget most A2C runs did not finish a survey, and the learning
-curves swing up and down instead of settling. The longer final run (see Table&nbsp;5) shows that A2C
-can learn the task with more steps, but it needs much more training than PPO to get there, and it
-scans less accurately.</p>
+curves swing up and down instead of settling.{final_line}</p>
 """
 
 
@@ -445,7 +451,7 @@ good, but a fast run that reached a low score just gave up early.</p>
 <p>None of the four algorithms had fully levelled off at 200,000 steps. That is a real limit of the
 sweep, and it is stated as such. The tables compare settings at a fixed budget, which is the question
 a person with limited compute actually faces, but it is not the same as comparing the best each
-method can ever reach. So the best setting of each algorithm was trained again for 1,500,000 steps,
+method can ever reach. So the best setting of each algorithm was trained again for 800,000 steps,
 and those longer runs are the ones in Table&nbsp;5.</p>
 """
 
@@ -467,21 +473,27 @@ seeds only shows the agent did not memorise fixed episodes. The useful columns a
 <p>The strongest agent overall was <b>{top}</b>. It finishes {_pct(nom)} of surveys on the held-out
 seeds. It holds {_pct(seab)} on a rougher seabed and {_pct(bat)} with a smaller battery, so it did not
 overfit to the easy settings. The one hard column is strong current, where it drops to {_pct(cur)}.
-The reason is honest and worth stating: the crab-into-the-current skill is done by the onboard
-controller, not by the policy, so the hand-written pilot drops the same way, from {_pct(p_nom)} to
-{_pct(p_cur)}. On this mission the gap between algorithms is about how reliably each one lines up and
-scans, not about current. The two agents that never finish a survey have flat lines across all
-columns, because they have nothing to generalise yet.</p>
+That is the hardest column for every method, learned or scripted, because holding station against a
+strong current is a lot of what makes the scan hard: the hand-written pilot drops the same way, from
+{_pct(p_nom)} to {_pct(p_cur)}, and the learned agent actually holds up a little better. The two agents
+that never finish a survey have flat lines across all columns, because they have nothing to generalise
+yet.</p>
 """
+
+
+def _fp(algo: str) -> str:
+    f = _final(algo)
+    return _pct(_num(f, "success_rate")) if f else "n/a"
 
 
 def _conclusion() -> str:
     return f"""
 <p>Four reinforcement learning algorithms were trained on the same subsea inspection mission and
 compared over forty hyperparameter runs. Ranked by best setting at the 200,000-step budget, the order
-was {_ranking()}. With longer training (Table&nbsp;5), DQN and PPO both finish about 93% of surveys,
-PPO scans the most accurately, A2C also learns the task but needs far more steps and scans less
-precisely, and REINFORCE never finishes a survey.</p>
+was {_ranking()}. With the longer final runs (Table&nbsp;5), PPO finishes {_fp('PPO')} of surveys and
+DQN {_fp('DQN')}, with PPO scanning the most accurately. A2C ({_fp('A2C')}) and REINFORCE
+({_fp('REINFORCE')}) do not complete a survey even at the extended budget: A2C would need far more
+steps, and REINFORCE's high variance stops it sharpening the policy in time.</p>
 <p>PPO is the best fit for this problem. Its clip keeps training stable, and it beats the hand-written
 pilot on both completion and scan accuracy. DQN is a close second, and its replay buffer gives the
 smoothest learning. A2C works but is slow and unstable without a trust region, and REINFORCE is the

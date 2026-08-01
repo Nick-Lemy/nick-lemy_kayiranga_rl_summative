@@ -2,28 +2,27 @@
   "row": {
     "run_id": "final",
     "algo": "PPO",
-    "learning_rate": 0.0005,
-    "n_steps": 1024,
+    "learning_rate": 0.0003,
+    "n_steps": 512,
     "batch_size": 256,
-    "n_epochs": 10,
+    "n_epochs": 20,
     "gamma": 0.995,
     "gae_lambda": 0.95,
-    "clip_range": 0.2,
+    "clip_range": 0.1,
     "ent_coef": 0.01,
     "vf_coef": 0.5,
     "max_grad_norm": 0.5,
-    "timesteps": 1500000,
-    "mean_return": 423.36,
-    "std_return": 195.47,
-    "success_rate": 0.9333,
-    "mean_miss": 1.189,
-    "flight_time": 35.23,
-    "battery_left": 0.743,
-    "convergence_step": 300000,
-    "wall_time_s": 1329.1
+    "timesteps": 800000,
+    "mean_return": 548.38,
+    "std_return": 12.97,
+    "success_rate": 1.0,
+    "mean_miss": 0.979,
+    "flight_time": 37.76,
+    "battery_left": 0.746,
+    "convergence_step": 333336,
+    "wall_time_s": 1227.8
   },
   "outcomes": {
-    "survey_complete": 28,
-    "timeout": 2
+    "survey_complete": 30
   }
 }

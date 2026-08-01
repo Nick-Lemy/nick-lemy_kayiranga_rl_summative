@@ -3,10 +3,10 @@
     "run_id": "final",
     "algo": "DQN",
     "learning_rate": 0.0003,
-    "buffer_size": 200000,
-    "learning_starts": 10000,
+    "buffer_size": 50000,
+    "learning_starts": 5000,
     "batch_size": 128,
-    "gamma": 0.95,
+    "gamma": 0.995,
     "train_freq": 4,
     "gradient_steps": 1,
     "target_update_interval": 2000,
@@ -15,19 +15,17 @@
     "exploration_initial_eps": 1.0,
     "exploration_final_eps": 0.05,
     "max_grad_norm": 10.0,
-    "timesteps": 1500000,
-    "mean_return": 372.04,
-    "std_return": 76.87,
-    "success_rate": 0.9333,
-    "mean_miss": 2.58,
-    "flight_time": 34.39,
-    "battery_left": 0.773,
-    "convergence_step": 300000,
-    "wall_time_s": 1297.2
+    "timesteps": 800000,
+    "mean_return": 455.41,
+    "std_return": 17.58,
+    "success_rate": 1.0,
+    "mean_miss": 2.028,
+    "flight_time": 38.34,
+    "battery_left": 0.762,
+    "convergence_step": 399996,
+    "wall_time_s": 1169.5
   },
   "outcomes": {
-    "collision": 1,
-    "survey_complete": 28,
-    "timeout": 1
+    "survey_complete": 30
   }
 }

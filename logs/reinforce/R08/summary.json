@@ -10,19 +10,19 @@
     "ent_coef": 0.01,
     "max_grad_norm": 0.5,
     "timesteps": 200000,
-    "mean_return": -650.23,
-    "std_return": 233.07,
+    "mean_return": -556.96,
+    "std_return": 323.02,
     "success_rate": 0.0,
-    "mean_miss": 2.744,
-    "flight_time": 42.2,
-    "battery_left": 0.712,
+    "mean_miss": NaN,
+    "flight_time": 41.63,
+    "battery_left": 0.728,
     "convergence_step": 0,
-    "wall_time_s": 297.3
+    "wall_time_s": 259.8
   },
   "outcomes": {
     "capsized": 1,
     "collision": 2,
-    "lost": 18,
-    "timeout": 9
+    "lost": 20,
+    "timeout": 7
   }
 }
