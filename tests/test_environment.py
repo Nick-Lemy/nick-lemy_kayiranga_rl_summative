@@ -120,15 +120,27 @@ def _teleport(env, xyz):
     mujoco.mj_forward(env.model, env.data)
 
 
-def test_inspect_in_range_advances_the_survey():
+def _hold_until_scanned(env, max_steps=18):
+    """Sit still (HOLD) in the ring until the held scan is captured."""
+    start = env.active_wp
+    for _ in range(max_steps):
+        env.step(int(Action.HOLD))
+        if env.active_wp > start:
+            return True
+    return False
+
+
+def test_holding_station_captures_a_scan():
     env = SubseaInspectionEnv()
     env.reset(seed=7)
     assert env.active_wp == 0
     _teleport(env, WAYPOINTS[0])
-    _, reward, term, trunc, info = env.step(int(Action.INSPECT))
-    assert env.active_wp == 1, "a scan inside the hoop did not advance the survey"
-    assert reward > 20.0, f"a clean scan should pay well, got {reward:.1f}"
-    assert not (term or trunc)
+    # a scan needs a hold first: it must not be captured on the first step
+    env.step(int(Action.INSPECT))
+    assert env.active_wp == 0, "a scan was captured without holding station"
+    # holding station in the ring builds up the scan and captures it
+    assert _hold_until_scanned(env), "holding station never captured the scan"
+    assert env.active_wp == 1
     env.close()
 
 
@@ -145,22 +157,27 @@ def test_inspect_out_of_range_is_penalised_and_changes_nothing():
 
 
 def test_full_survey_via_teleport_scores_high():
-    """Inspecting all four stations in order must terminate as survey_complete."""
+    """Holding and scanning all four stations in order ends as survey_complete."""
     env = SubseaInspectionEnv()
     env.reset(seed=9)
-    total, outcome = 0.0, None
+    total, outcome, info, done = 0.0, None, {}, False
     for wp in WAYPOINTS:
-        # sit just off the hoop centre so we are still inside scan range but
-        # clear of the pipe and the manifold riser that occupy the exact points
-        _teleport(env, [wp[0], wp[1] + 1.5, wp[2]])
-        _, r, term, trunc, info = env.step(int(Action.INSPECT))
-        total += r
+        # sit just off the ring centre so we are inside scan range but clear of
+        # the pipe and the manifold riser that occupy the exact points
+        _teleport(env, [wp[0], wp[1] + 0.8, wp[2]])
+        done_wp = env.active_wp
+        for _ in range(18):  # hold station until this station's scan is captured
+            _, r, term, trunc, info = env.step(int(Action.HOLD))
+            total += r
+            done = term or trunc
+            if env.active_wp > done_wp or done:
+                break
         outcome = info["outcome"]
-        if term or trunc:
+        if done:
             break
     assert outcome == "survey_complete", outcome
     assert info["success"] is True
-    assert total > 200.0, f"a perfect survey should score well, got {total:.1f}"
+    assert total > 150.0, f"a perfect survey should score well, got {total:.1f}"
     env.close()
 
 

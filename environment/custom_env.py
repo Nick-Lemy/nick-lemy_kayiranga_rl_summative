@@ -118,7 +118,7 @@ class EnvConfig:
 
     # --- timing -------------------------------------------------------------
     frame_skip: int = 10               # 10 x 10 ms  ->  a 10 Hz guidance loop
-    max_episode_seconds: float = 55.0
+    max_episode_seconds: float = 62.0
 
     # --- manoeuvring envelope ----------------------------------------------
     max_surge: float = 2.4             # m/s, largest commandable forward speed
@@ -150,9 +150,9 @@ class EnvConfig:
     current_theta: float = 0.5         # OU mean reversion
 
     # --- geometry -----------------------------------------------------------
-    inspect_radius: float = 2.8        # m, must be this close to log a scan
-    scan_speed_max: float = 1.0        # m/s, must be slower than this to auto-log
-    scan_dwell_steps: int = 4          # control steps of station-keeping to auto-log
+    inspect_radius: float = 2.8        # m, must be this close to scan
+    scan_speed_max: float = 0.6        # m/s, must hold slower than this to scan
+    scan_dwell_steps: int = 8          # control steps of station-keeping before a scan can be captured (0.8 s)
     corridor_half_width: float = 9.0   # m off the pipe before the survey degrades
     survey_x_min: float = -32.0
     survey_x_max: float = 32.0
@@ -174,7 +174,9 @@ class EnvConfig:
     w_corridor: float = 0.4            # for straying off the pipeline
     w_seabed: float = 0.6              # for hugging the seabed
     w_bounds: float = 0.7              # per metre outside the (soft) survey box
+    w_hold: float = 0.6                # per step for holding station in the ring while the scan builds up
     r_inspect: float = 60.0            # peak per-station scan reward (decays with offset)
+    r_inspect_action: float = 8.0      # bonus for capturing the scan with a deliberate INSPECT
     r_station_bonus: float = 30.0      # flat bonus for a clean scan inside the hoop
     r_complete: float = 120.0          # finishing the whole survey
     p_bad_scan: float = 1.0            # triggering a scan with no station in range
@@ -214,7 +216,7 @@ OBS_LAYOUT: list[tuple[str, str]] = [
     ("20", "fraction of the mission clock left"),
     ("21", "vertical speed / 3 m/s"),
     ("22", "pipeline corridor margin, 1 = on the pipe, 0 = at the edge"),
-    ("23", "1 when the active station is within scan range, else 0"),
+    ("23", "scan state: 0 out of range, 0.5 holding station, 1 ready to capture"),
     ("24-27", "commanded surge / sway / vertical-speed / relative-heading setpoints"),
 ]
 
@@ -326,6 +328,16 @@ class SubseaInspectionEnv(gym.Env):
             g for g in range(self.model.ngeom) if self.model.geom_bodyid[g] == self._bid_rov
         }
 
+        #: the four inspection rings, in survey order. Their material is detached
+        #: so their colour can be driven from python: a ring lights up while the
+        #: vehicle is scanning it, and turns solid green once its scan is captured.
+        self._ring_gids = []
+        for name in ("wp0_ring", "wp1_ring", "wp2_ring", "stn_wp_ring"):
+            gid = mj.mj_name2id(self.model, mj.mjtObj.mjOBJ_GEOM, name)
+            self._ring_gids.append(gid)
+            if gid >= 0:
+                self.model.geom_matid[gid] = -1
+
         # --- heightfield bookkeeping ----------------------------------------
         self._hf_nrow = int(self.model.hfield_nrow[0])
         self._hf_ncol = int(self.model.hfield_ncol[0])
@@ -368,6 +380,8 @@ class SubseaInspectionEnv(gym.Env):
         self._episode_return = 0.0
         self._last_thrust = 0.0
         self._dwell = 0
+        self._scanning = False
+        self._scan_ready = False
         self._scan_offsets: list[float] = []
         self._scanned_at: dict[int, float] = {}
 
@@ -639,7 +653,13 @@ class SubseaInspectionEnv(gym.Env):
         pipe_dist = _dist_to_polyline(pos[0], pos[1], PIPE_NODES)
         corridor_margin = 1.0 - min(1.0, pipe_dist / cfg.corridor_half_width)
         time_left = 1.0 - self.step_count / self.max_steps
-        in_range = 1.0 if ground_range <= cfg.inspect_radius else 0.0
+        # scan state: 0 out of range, 0.5 in range and holding, 1 ready to capture
+        if ground_range > cfg.inspect_radius:
+            scan_state = 0.0
+        elif self._scan_ready:
+            scan_state = 1.0
+        else:
+            scan_state = 0.5
 
         obs = np.concatenate(
             [
@@ -655,7 +675,7 @@ class SubseaInspectionEnv(gym.Env):
                 [time_left],
                 [vel[2] / VEL_SCALE],
                 [corridor_margin],
-                [in_range],
+                [scan_state],
                 # the actions edit persistent setpoints, so those setpoints are
                 # part of the state and must be observable for the problem to
                 # stay Markovian
@@ -739,31 +759,48 @@ class SubseaInspectionEnv(gym.Env):
             return reward - cfg.p_battery, True, False
 
         # --- the inspection itself -------------------------------------------
-        # A scan is logged either by firing INSPECT inside the hoop, or by
-        # holding station inside it for a few control steps (the vehicle's
-        # auto-log-on-station-keeping behaviour). INSPECT is the faster, manual
-        # route a trained agent uses; the dwell fallback keeps the survey
-        # completable by navigation alone.
+        # A scan is not instant. The vehicle has to reach the ring, slow to a
+        # near stop, and hold station there against the current for a short dwell
+        # so the sensor can build up a reading. Only once that hold is complete
+        # does firing INSPECT capture the scan. This forces a real, visible
+        # inspection at each station instead of skimming through it.
         ground_range = float(np.linalg.norm((target - pos)[:2]))
         in_range = ground_range <= cfg.inspect_radius
-        if in_range and speed < cfg.scan_speed_max:
+        holding = in_range and speed < cfg.scan_speed_max
+        if holding:
             self._dwell += 1
         else:
             self._dwell = 0
+        self._scan_ready = self._dwell >= cfg.scan_dwell_steps
+        self._scanning = holding and not self._scan_ready
 
-        do_scan = in_range and (scanned_now or self._dwell >= cfg.scan_dwell_steps)
-        if scanned_now and not in_range:
-            # a manual scan with nothing in range wastes energy and sensor time
-            reward -= cfg.p_bad_scan
+        # reward the hold itself, but only while it is building up, so the agent
+        # is guided to stop and station-keep without being able to camp for free
+        if holding and self._dwell <= cfg.scan_dwell_steps:
+            reward += cfg.w_hold
 
-        if do_scan:
+        # The scan is captured automatically once the hold is complete (the
+        # vehicle has held station in the ring long enough). Firing INSPECT while
+        # the scan is ready is a deliberate capture and earns a small bonus, so a
+        # trained agent learns to press it; firing it early or out of range costs
+        # a little. Auto-capture keeps the survey reliably completable.
+        inspect_bonus = 0.0
+        if scanned_now:
+            if self._scan_ready:
+                inspect_bonus = cfg.r_inspect_action
+            elif not in_range:
+                reward -= cfg.p_bad_scan
+
+        if self._scan_ready and (holding or scanned_now):
             offset = float(np.linalg.norm(target - pos))
             self._scan_offsets.append(offset)
             self._scanned_at[self.active_wp] = float(self.step_count * self.dt)
             reward += cfg.r_inspect * math.exp(-((offset / cfg.inspect_radius) ** 2))
-            reward += cfg.r_station_bonus
+            reward += cfg.r_station_bonus + inspect_bonus
             self.active_wp += 1
             self._dwell = 0
+            self._scanning = False
+            self._scan_ready = False
             if self.active_wp >= N_WAYPOINTS:
                 self.outcome = "survey_complete"
                 return reward + cfg.r_complete, True, False
@@ -799,6 +836,9 @@ class SubseaInspectionEnv(gym.Env):
             "waypoints_total": int(N_WAYPOINTS),
             "survey_progress": self.active_wp / N_WAYPOINTS,
             "battery": float(self.battery),
+            "scanning": bool(self._scanning),
+            "scan_ready": bool(self._scan_ready),
+            "scan_progress": float(min(1.0, self._dwell / self.cfg.scan_dwell_steps)),
             "altitude_agl": float(pos[2] - self.terrain_height(pos[0], pos[1])),
             "range_to_wp": float(np.linalg.norm((target - pos)[:2])),
             "current_speed": float(np.linalg.norm(self.current)),
@@ -852,6 +892,7 @@ class SubseaInspectionEnv(gym.Env):
                 "r": round(float(self._last_reward), 3),
                 "bat": round(float(self.battery), 4),
                 "wp": int(self.active_wp),
+                "sc": 1.0 if self._scan_ready else (0.5 if self._scanning else 0.0),
                 "cur": [round(float(v), 3) for v in self.current],
             }
         )
@@ -872,6 +913,27 @@ class SubseaInspectionEnv(gym.Env):
         return path
 
     # ----------------------------------------------------------------- render
+
+    def update_ring_colors(self) -> None:
+        """Colour the rings by survey state so a scan is visible in the 3D view.
+
+        Called by the renderers, not during training. Done rings are green, the
+        active ring is teal and brightens as its scan builds up, and rings still
+        ahead are dim.
+        """
+        for i, gid in enumerate(self._ring_gids):
+            if gid < 0:
+                continue
+            if i < self.active_wp:
+                rgba = (0.10, 0.85, 0.35, 0.95)                       # scanned: solid green
+            elif i == self.active_wp and (self._scanning or self._scan_ready):
+                p = min(1.0, self._dwell / max(1, self.cfg.scan_dwell_steps))
+                rgba = (0.20, 0.95, 0.85, 0.45 + 0.5 * p)            # scanning: bright cyan
+            elif i == self.active_wp:
+                rgba = (0.10, 0.82, 0.70, 0.80)                       # active target: teal
+            else:
+                rgba = (0.28, 0.45, 0.45, 0.35)                       # ahead: dim
+            self.model.geom_rgba[gid] = rgba
 
     def render(self):
         from environment import rendering

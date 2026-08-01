@@ -423,11 +423,22 @@ function applyFrame(i, alpha = 0) {
 
   for (const d of rov.userData.props) d.rotation.x += 0.9;
 
-  // colour the hoops by survey state: done, active (pulsing), pending
+  // colour the hoops by survey state: done, active (pulsing), pending. While the
+  // vehicle is scanning the active ring (f.sc > 0) it flashes brightly.
   const pulse = 0.5 + 0.5 * Math.sin(performance.now() * 0.006);
+  const scanning = (f.sc || 0) > 0;
+  const fast = 0.5 + 0.5 * Math.sin(performance.now() * 0.02);
   hoops.forEach((h, k) => {
     if (k < f.wp) { h.userData.mat.color.setHex(0x18c26a); h.userData.mat.emissive.setHex(0x0a3c25); h.userData.glow.visible = false; }
-    else if (k === f.wp) { h.userData.mat.color.setHex(0x2ee0c0); h.userData.mat.emissive.setHex(0x1b8f7d); h.userData.glow.visible = true; h.userData.glow.material.opacity = 0.3 + 0.5 * pulse; }
+    else if (k === f.wp) {
+      if (scanning) {
+        h.userData.mat.color.setHex(0x8affea); h.userData.mat.emissive.setHex(0x2ee0c0);
+        h.userData.glow.visible = true; h.userData.glow.material.opacity = 0.4 + 0.6 * fast;
+      } else {
+        h.userData.mat.color.setHex(0x2ee0c0); h.userData.mat.emissive.setHex(0x1b8f7d);
+        h.userData.glow.visible = true; h.userData.glow.material.opacity = 0.3 + 0.5 * pulse;
+      }
+    }
     else { h.userData.mat.color.setHex(0x3a5a55); h.userData.mat.emissive.setHex(0x0a1f1c); h.userData.glow.visible = false; }
   });
 

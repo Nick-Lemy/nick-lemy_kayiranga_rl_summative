@@ -128,9 +128,9 @@ compared against:
 
 | Policy | Mean return | Surveys complete |
 |---|---|---|
-| Uniform random | −432.8 | 0% |
-| Do nothing (`HOLD` forever) | −144.4 | 0% |
-| Hand-written pilot (`tests/scripted_pilot.py`) | +360.0 | 90% |
+| Uniform random | −383.7 | 0% |
+| Do nothing (`HOLD` forever) | −191.0 | 0% |
+| Hand-written pilot (`tests/scripted_pilot.py`) | +468.2 | 90% |
 
 Random is *worse* than doing nothing here: thrashing the thrusters drives the vehicle
 into the seabed or out of the box and collects the terminal penalties, whereas holding

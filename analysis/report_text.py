@@ -157,8 +157,11 @@ to the vehicle:</p>
 <li><b>STRAFE RIGHT</b>: slide right.</li>
 <li><b>ASCEND</b>: rise.</li>
 <li><b>DESCEND</b>: dive.</li>
-<li><b>INSPECT</b>: take a sensor scan. This is the key action. It only counts when the vehicle is
-inside an inspection ring, so the agent has to pick the right moment to scan.</li>
+<li><b>INSPECT</b>: capture a sensor scan. A scan is not instant: the vehicle must first reach an
+inspection ring, slow to a near stop, and hold station there for a short moment so the sensor can
+build up a reading. Once that hold is complete the scan is captured, and firing INSPECT at that moment
+is the deliberate capture and earns a small bonus. So the agent has to learn to stop and hold, not
+just fly through.</li>
 </ol>
 <p>Yaw and strafe are split into left and right so the agent can make a small correction in either
 direction. Every action maps to a real thruster or sensor command on the vehicle.</p>
@@ -215,9 +218,9 @@ OBS_TABLE: list[tuple[str, str, str, str, str]] = [
     ("Pipeline corridor margin",
      "How close the vehicle is to the pipe it should follow",
      "Multibeam sonar pipe tracker", "1 x float32", "0 to 1"),
-    ("In scan range flag",
-     "1 when the active station is close enough to scan, else 0",
-     "Computed onboard", "1 x float32", "0 or 1"),
+    ("Scan state",
+     "0 out of range, 0.5 holding station in the ring, 1 scan ready to capture",
+     "Computed onboard", "1 x float32", "0, 0.5, or 1"),
     ("Commanded setpoints",
      "The surge, sway, depth-rate, and heading targets currently set",
      "Autopilot state", "4 x float32", "-1 to 1"),
@@ -228,27 +231,26 @@ OBS_TABLE: list[tuple[str, str, str, str, str]] = [
 REWARD = """
 <p>The reward has several parts, because the mission has several goals at once.</p>
 <p>The main shaping term gives <b>+1.3</b> for every metre the vehicle moves closer to the active
-station. This is what makes the long trip between stations learnable. Each clean scan pays
-<b>60 &middot; exp(-(offset / 2.8)<sup>2</sup>)</b>, where "offset" is the distance from the ring
-centre, so the reward is highest when the vehicle is centred in the ring. On top of that, a scan
-inside the ring pays a flat <b>+30</b>, and finishing all four stations pays a further <b>+120</b>.</p>
+station. This is what makes the long trip between stations learnable. When the vehicle is inside a
+ring and moving slowly, it also earns <b>+0.6</b> per step for holding station while the scan builds
+up, which guides it to stop and stay. Capturing the scan pays <b>60 &middot; exp(-(offset / 2.8)<sup>2</sup>)</b>,
+where "offset" is the distance from the ring centre, so the reward is highest when the vehicle is
+centred, plus a flat <b>+30</b>. Finishing all four stations pays a further <b>+120</b>.</p>
 <p>Small costs apply every step for time, thruster energy, tilt, and spin. There are shaped penalties
-for drifting off the pipeline and for hugging the seabed. Taking a scan with no station in range
-costs only <b>1</b> point. This penalty is kept small on purpose: a large one taught the agent to
-avoid the scan action completely before it ever learned that a scan inside a ring pays off. Hard
-failures (driving into the seabed, pipe, or manifold, tipping past 70 degrees, or leaving the survey
-area) cost <b>55</b>. A flat battery costs <b>50</b>. Running out of time costs <b>12</b> for each
-station still not inspected.</p>
-<p>The agent cannot win by chasing one goal. Going fast drains the battery and overshoots the ring.
-Going slow risks the clock. A clean, centred scan means actively thrusting against the current to
-hold position instead of drifting with it.</p>
+for drifting off the pipeline and for hugging the seabed. Firing INSPECT with no station in range
+costs only <b>1</b> point, kept small so the agent is not afraid to try the scan action. Hard failures
+(driving into the seabed, pipe, or manifold, tipping past 70 degrees, or leaving the survey area) cost
+<b>55</b>. A flat battery costs <b>50</b>. Running out of time costs <b>12</b> for each station still
+not inspected.</p>
+<p>The agent cannot win by chasing one goal. Going fast drains the battery and skips the hold, so no
+scan is captured. Going slow risks the clock. A clean, centred scan means driving to the ring centre
+and then actively thrusting against the current to hold position instead of drifting away.</p>
 """
 
 BASELINE_BOX = """
 <b>Reference scores.</b> Measured over the held-out seeds so the trained agents have something to
-beat. A random policy scores <b>-433</b> with 0% of surveys finished. Doing nothing (HOLD forever)
-scores <b>-144</b>, also 0%. A hand-written pilot in <code>tests/scripted_pilot.py</code> reaches
-<b>+360</b> and finishes about <b>90%</b> of surveys. Random is worse than doing nothing here,
+beat. A random policy scores <b>-384</b> with 0% of surveys finished. Doing nothing (HOLD forever) scores <b>-191</b>, also 0%. A hand-written pilot in <code>tests/scripted_pilot.py</code> reaches
+<b>+468</b> and finishes about <b>90%</b> of surveys. Random is worse than doing nothing here,
 because thrashing the thrusters drives the vehicle into the seabed or out of the area and collects
 the big penalties, while doing nothing just drifts and runs the clock out.
 """

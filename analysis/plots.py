@@ -43,7 +43,7 @@ RESULTS_DIR = LOG_DIR / "results"
 #: Reference scores from ``tests/scripted_pilot.py`` and the trivial policies,
 #: measured over the held-out seeds. Quoted in the comparison figure so the
 #: learned curves have something to be better (or worse) than.
-BASELINES = {"random policy": -432.8, "do nothing": -144.4, "hand-written pilot": 360.0}
+BASELINES = {"random policy": -383.7, "do nothing": -191.0, "hand-written pilot": 468.2}
 
 
 # ------------------------------------------------------------------ log loading

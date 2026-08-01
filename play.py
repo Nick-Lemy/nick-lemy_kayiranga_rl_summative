@@ -77,6 +77,7 @@ def run(args) -> None:
                   f"  {env._info()['waypoints_total']} stations to inspect"
                   f"  current {np.linalg.norm(env.current_mean):.2f} m/s ---{_RESET}")
 
+            prev_done = 0
             while not done:
                 action = fallback(env) if fallback is not None else predict(obs)
                 obs, reward, terminated, truncated, info = env.step(action)
@@ -85,14 +86,21 @@ def run(args) -> None:
                 step += 1
                 action_counts[info["action"]] += 1
 
+                # call out each inspection so the terminal shows the scans
+                if info["waypoints_done"] > prev_done:
+                    prev_done = info["waypoints_done"]
+                    print(f"    {_GREEN}*** SCAN CAPTURED at station {prev_done}"
+                          f"/{info['waypoints_total']} ***{_RESET}")
+
                 if step % 5 == 0:
+                    scan = "SCANNING" if info["scanning"] else ("READY" if info["scan_ready"] else "")
                     print(
                         f"    t={info['mission_time']:5.1f}s"
-                        f"  {info['action']:<15}"
+                        f"  {info['action']:<12}"
                         f"  range {info['range_to_wp']:6.2f} m"
-                        f"  depth {info['altitude_agl']:5.1f} m"
                         f"  bat {info['battery']:.2f}"
                         f"  stn {info['waypoints_done']}/{info['waypoints_total']}"
+                        f"  {scan:<8}"
                         f"  R {total:8.2f}"
                     )
                 if env._viewer is not None and not env._viewer.running:

@@ -53,17 +53,21 @@ def cmd_env_info(args) -> None:
     print("\n  REWARD")
     print(f"    progress towards the active station   +{cfg.w_progress} per metre closed")
     print(
-        f"    clean inspection scan                 +{cfg.r_inspect}"
-        f" * exp(-(offset/{cfg.inspect_radius:.1f})^2)"
+        f"    holding station in the ring           +{cfg.w_hold} per step"
+        f" (slower than {cfg.scan_speed_max} m/s, for {cfg.scan_dwell_steps} steps)"
     )
-    print(f"    scan inside the {cfg.inspect_radius:.1f} m hoop            +{cfg.r_station_bonus}")
+    print(
+        f"    captured scan (INSPECT when ready)    +{cfg.r_inspect}"
+        f" * exp(-(offset/{cfg.inspect_radius:.1f})^2)  +{cfg.r_station_bonus}"
+    )
     print(f"    full survey completed                 +{cfg.r_complete}")
     print(
         f"    time / energy / tilt / spin           -{cfg.w_step} / -{cfg.w_energy}"
         f" / -{cfg.w_tilt} / -{cfg.w_spin} per step"
     )
+    print(f"    deliberate INSPECT at a ready scan     +{cfg.r_inspect_action}")
     print(f"    off-pipeline / seabed proximity       shaped, up to -{cfg.w_corridor} / -{cfg.w_seabed}")
-    print(f"    scan with no station in range         -{cfg.p_bad_scan}")
+    print(f"    INSPECT with no station in range      -{cfg.p_bad_scan}")
     print(f"    collision / capsize                   -{cfg.p_collision} / -{cfg.p_capsize}")
     print(f"    flat battery / left the survey box    -{cfg.p_battery} / -{cfg.p_lost}")
     print(f"    ran out of time                       -{cfg.p_timeout} per station left")

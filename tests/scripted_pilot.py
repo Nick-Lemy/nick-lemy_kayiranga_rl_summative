@@ -25,7 +25,14 @@ from environment.custom_env import Action, SubseaInspectionEnv
 
 
 def scripted_policy(env: SubseaInspectionEnv) -> int:
-    """Greedy station-to-station pilot: face it, close in, hold, scan."""
+    """Station-to-station pilot: transit, slow to a stop in the ring, hold, scan.
+
+    The scan is not instant. The vehicle has to hold station inside the ring for
+    a short dwell before the scan can be captured, so the pilot drives to each
+    ring, brakes to a near stop, nulls its velocity so the controller holds it
+    against the current, waits for the scan to be ready, and only then fires
+    INSPECT.
+    """
     cfg = env.cfg
     pos = env._rov_pos()
     vel = env._rov_vel()
@@ -35,12 +42,9 @@ def scripted_policy(env: SubseaInspectionEnv) -> int:
     target = env._active_target()
     to_target = target - pos
     horiz = float(np.linalg.norm(to_target[:2]))
-    speed = float(np.linalg.norm(vel))
 
-    # 1. scan the moment we are inside the hoop and settled enough for a clean
-    #    reading; holding station against the current is what makes this
-    #    non-trivial, so we wait until the drift is bled off.
-    if horiz <= cfg.inspect_radius and abs(to_target[2]) < 0.8 and speed < 1.1:
+    # 1. capture the scan the moment the hold is complete.
+    if env._scan_ready:
         return int(Action.INSPECT)
 
     # 2. hold the working depth of the active station.
@@ -49,28 +53,38 @@ def scripted_policy(env: SubseaInspectionEnv) -> int:
     if to_target[2] < -0.35 and env.vz_cmd > -cfg.max_vspeed + 0.01:
         return int(Action.DESCEND)
 
-    # 3. point the nose at the station during the transit; close in, the bearing
-    #    swings fast and chasing it just wastes actions, and the vehicle can
-    #    strafe sideways without turning anyway.
+    # near the ring centre: null the velocity setpoints so the onboard
+    # controller holds the vehicle on the spot against the current while the scan
+    # builds. Holding near the centre (not the edge) keeps it in range through
+    # the whole dwell even as the current nudges it.
+    if horiz <= 1.0:
+        if env.surge_cmd > 0.05:
+            return int(Action.SURGE_REV)
+        if env.surge_cmd < -0.05:
+            return int(Action.SURGE_FWD)
+        if env.sway_cmd > 0.05:
+            return int(Action.STRAFE_RIGHT)
+        if env.sway_cmd < -0.05:
+            return int(Action.STRAFE_LEFT)
+        return int(Action.HOLD)
+
+    # transit: point at the station, then drive a range-scheduled speed that
+    # decays to almost zero at the centre so the vehicle arrives slow.
     bearing = math.atan2(to_target[1], to_target[0])
     heading_err = _wrap(bearing - yaw)
-    if horiz > cfg.inspect_radius and abs(heading_err) > 0.2:
+    if abs(heading_err) > 0.2:
         return int(Action.YAW_LEFT if heading_err > 0 else Action.YAW_RIGHT)
 
-    # 4. drive a range-scheduled forward speed so the approach decelerates and
-    #    arrives slow enough to hold station and scan.
-    surge_target = float(np.clip(0.5 * horiz, 0.0, cfg.max_surge))
-    fwd_speed = float(vel[0] * math.cos(yaw) + vel[1] * math.sin(yaw))
-    if env.surge_cmd < surge_target - 0.25 and fwd_speed < surge_target:
+    surge_target = float(np.clip(0.6 * horiz - 0.3, 0.0, cfg.max_surge))
+    if env.surge_cmd < surge_target - 0.2:
         return int(Action.SURGE_FWD)
-    if env.surge_cmd > surge_target + 0.25:
+    if env.surge_cmd > surge_target + 0.2:
         return int(Action.SURGE_REV)
 
-    # 5. trim lateral offset to the station line with the strafe thrusters.
     lat_err = float(-to_target[0] * math.sin(yaw) + to_target[1] * math.cos(yaw))
-    if lat_err > 1.0 and env.sway_cmd < cfg.max_sway - 0.01:
+    if lat_err > 0.8 and env.sway_cmd < cfg.max_sway - 0.01:
         return int(Action.STRAFE_LEFT)
-    if lat_err < -1.0 and env.sway_cmd > -cfg.max_sway + 0.01:
+    if lat_err < -0.8 and env.sway_cmd > -cfg.max_sway + 0.01:
         return int(Action.STRAFE_RIGHT)
 
     return int(Action.HOLD)

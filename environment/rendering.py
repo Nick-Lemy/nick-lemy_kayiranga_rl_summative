@@ -135,6 +135,7 @@ class PassiveViewer:
             return
         if self.env.terrain_dirty:
             self._upload_terrain()
+        self.env.update_ring_colors()
         if self.camera != "free":
             _chase_camera(self.env, self._handle.cam, self.camera)
         self._handle.sync()
@@ -187,6 +188,7 @@ class OffscreenRenderer:
     def frame(self) -> np.ndarray:
         if self.env.terrain_dirty:
             self._upload_terrain()
+        self.env.update_ring_colors()
         _chase_camera(self.env, self._cam, self.camera)
         self._renderer.update_scene(self.env.data, camera=self._cam)
         img = self._renderer.render()
@@ -210,7 +212,7 @@ class OffscreenRenderer:
         line = int(h * 0.038)
 
         # ---- left panel: mission telemetry --------------------------------
-        panel_w, panel_h = int(w * 0.30), int(line * 6.6)
+        panel_w, panel_h = int(w * 0.30), int(line * 7.5)
         draw.rounded_rectangle(
             [pad, pad, pad + panel_w, pad + panel_h], radius=10, fill=(12, 16, 24, 190)
         )
@@ -241,12 +243,15 @@ class OffscreenRenderer:
         self._bar(draw, x, y, bar_w, int(line * 0.42), info["survey_progress"], "SURVEY")
         y += int(line * 1.15)
 
-        draw.text(
-            (x, y),
-            f"return {info['episode_return']:8.1f}",
-            font=self._font_small,
-            fill=_WHITE,
-        )
+        # scan status: lights up while the vehicle holds station and scans
+        if info.get("scan_ready"):
+            draw.text((x, y), "SCAN READY: press INSPECT", font=self._font_small, fill=_GOOD)
+        elif info.get("scanning"):
+            pct = int(100 * info.get("scan_progress", 0.0))
+            draw.text((x, y), f"SCANNING... {pct}%", font=self._font_small, fill=_ACCENT)
+        else:
+            draw.text((x, y), f"return {info['episode_return']:8.1f}", font=self._font_small, fill=_WHITE)
+        y += int(line * 1.1)
 
         # ---- right panel: the action being taken --------------------------
         act_txt = info["action"]
